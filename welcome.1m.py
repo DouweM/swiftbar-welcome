@@ -220,20 +220,12 @@ class ConnectedPerson:
     def wifi_ssid(self):
         return self.connection_metadata["wifi_ssid"]
 
-    @property
-    def device_image_url(self):
-        return self.connection_metadata["device_image_url"]
-
-    @property
-    def image_url(self):
-        return self.avatar_url or self.device_image_url
-
-    async def image(self, session: aiohttp.ClientSession, size: int = 32) -> bytes | None:
-        image_url = self.image_url
-        if not image_url:
+    async def avatar(self, session: aiohttp.ClientSession, size: int = 32) -> bytes | None:
+        avatar_url = self.avatar_url
+        if not avatar_url:
             return None
 
-        data = await read_url(image_url, session)
+        data = await read_url(avatar_url, session)
         if not data:
             return None
 
@@ -243,9 +235,9 @@ class ConnectedPerson:
 
         return data
 
-    async def image_b64(self, session: aiohttp.ClientSession, size: int = 32) -> str | None:
+    async def avatar_b64(self, session: aiohttp.ClientSession, size: int = 32) -> str | None:
         # TODO: Cache between runs?
-        data = await self.image(session, size=size)
+        data = await self.avatar(session, size=size)
         if not data:
             return None
 
@@ -264,11 +256,15 @@ class WelcomeApp:
         return self._connected_people
 
     async def xbar_person(self, person: ConnectedPerson, session: aiohttp.ClientSession, **params: Any):
-        image = await person.image_b64(session, size=20)
+        avatar = await person.avatar_b64(session, size=20)
+        if avatar:
+            params["image"] = avatar
+        else:
+            params["sfimage"] = "person.fill" if person.known else "person.fill.questionmark"
 
-        # TODO: Why is image not working in SwiftBar?
-        # TODO: Default image when there's no avatar? Diff for known/unknown
-        xbar(person.name, refresh=True, size=14, image=image, **params)
+        params["size"] = 14
+
+        xbar(person.name, **params)
 
         with xbar_submenu():
             # xbar(person.connection_summary, symbolize=False, separator=True)
@@ -297,7 +293,7 @@ class WelcomeApp:
         xbar("Open Welcome...", href=SERVER_URL, **params)
 
     def xbar_error(self, message: str, err: Exception | None = None, **params: Any):
-        xbar(message, color="red", sfimage="warning", **params)
+        xbar(message, sfimage="warning", color="red", **params)
         if err:
             print(err)
 
