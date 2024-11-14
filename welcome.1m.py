@@ -124,7 +124,7 @@ async def resize_image_data(data: bytes, size: int) -> bytes:
     return data
 
 async def circle_image_data(data: bytes) -> bytes:
-    if not shutil.which("magick"):
+    if not shutil.which("magick", path="/opt/homebrew/bin"):
         return data
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -145,7 +145,7 @@ async def circle_image_data(data: bytes) -> bytes:
             "A",
             "-fx",
             "hypot(i-w/2,j-h/2) < w/2 ? 1 : 0",
-            "-",
+            "png:-",
             env={"PATH": "/opt/homebrew/bin"}, # TODO: Don't hardcode!
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -256,7 +256,7 @@ class WelcomeApp:
         return self._connected_people
 
     async def xbar_person(self, person: ConnectedPerson, session: aiohttp.ClientSession, **params: Any):
-        avatar = await person.avatar_b64(session, size=20)
+        avatar = await person.avatar_b64(session, size=24)
         if avatar:
             params["image"] = avatar
         else:
