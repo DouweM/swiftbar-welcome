@@ -214,11 +214,11 @@ class ConnectedPerson:
 
     @property
     def ip(self):
-        return self.connection_metadata["ip"]
+        return self.connection_metadata.get("ip")
 
     @property
     def wifi_ssid(self):
-        return self.connection_metadata["wifi_ssid"]
+        return self.connection_metadata.get("wifi_ssid")
 
     async def avatar(self, session: aiohttp.ClientSession, size: int = 32) -> bytes | None:
         avatar_url = self.avatar_url
