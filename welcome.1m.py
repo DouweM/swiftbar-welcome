@@ -162,7 +162,7 @@ async def read_url(url: str, session: aiohttp.ClientSession) -> bytes | None:
     try:
         async with session.get(URL(url, encoded=True)) as response:
             return await response.read()
-    except aiohttp.ClientResponseError:
+    except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
         return None
 
 
