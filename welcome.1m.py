@@ -30,7 +30,7 @@ from collections import defaultdict
 from yarl import URL
 from aiohttp.cookiejar import CookieJar
 import pickle
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 MENUBAR_ICON_B64 = "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"
 
@@ -75,7 +75,7 @@ def xbar(text: str | None = None, separator: bool = False, nest: int = -1, **par
         nest = _nesting
 
     if separator:
-        print("--" * nest + "---")
+        print("--" * nest + "---", flush=True)
 
     segments: list[str] = []
 
@@ -91,17 +91,18 @@ def xbar(text: str | None = None, separator: bool = False, nest: int = -1, **par
         segments.extend(params_segments)
 
     if segments:
-        print("--" * nest + " ".join(segments))
+        print("--" * nest + " ".join(segments), flush=True)
 
 
-def xbar_kv(label: str, value: Any, tabs: int = 0, copy: bool = False, **params: Any):
+def xbar_kv(label: str, value: Any, tabs: int = 0, copy: bool | str = False, **params: Any):
     params["symbolize"] = False
 
     if copy:
+        copy_value = copy if isinstance(copy, str) else value
         # Copy value to clipboard (only tested on macOS)
         params["bash"] = shutil.which("bash")
         params["param0"] = "-c"
-        params["param1"] = f'"echo -n {value} | pbcopy"'
+        params["param1"] = f'"echo -n {copy_value} | pbcopy"'
         params["terminal"] = False
 
     xbar("".join([label, "\t" * tabs, str(value)]), **params)
@@ -246,8 +247,13 @@ class Room(BaseModel):
     attrs: dict[str, Any] = {}
 
 class Metadata(BaseModel):
-    ip: str | None
-    wifi_ssid: str | None
+    model_config = ConfigDict(extra="allow")
+
+    ip: str | None = None
+    mac: str | None = None
+    wifi_ssid: str | None = None
+
+    mac_is_private: bool = False
 
 class Connection(BaseModel):
     summary: str
@@ -257,7 +263,7 @@ class Connection(BaseModel):
     network: Network
 
     device: Device
-    person: Person | None
+    person: Person | None = None
 
     role: Role
 
@@ -271,8 +277,8 @@ class ConnectedPerson(BaseModel):
 
     person: Person
 
-    home: Home | None
-    room: Room | None
+    home: Home | None = None
+    room: Room | None = None
 
     role: Role
 
@@ -287,6 +293,7 @@ class ConnectedPerson(BaseModel):
 
 class WelcomeApp:
     def __init__(self):
+        self._connection: Connection | None = None
         self._connected_people: list[ConnectedPerson] | None = None
 
         self._cookie_jar = CookieJar()
@@ -315,6 +322,16 @@ class WelcomeApp:
             cookie_jar=self._cookie_jar
         )
 
+    async def connection(self, session: aiohttp.ClientSession) -> Connection:
+        if self._connection is None:
+            async with session.get(f"{SERVER_URL}/api/me") as response:
+                self._save_cookies()
+
+                raw_connection = await response.json()
+                self._connection = Connection.model_validate(raw_connection)
+
+        return self._connection
+
     async def connected_people(self, session: aiohttp.ClientSession) -> list[ConnectedPerson]:
         if self._connected_people is None:
             async with session.get(f"{SERVER_URL}/api/homes/people") as response:
@@ -325,31 +342,46 @@ class WelcomeApp:
 
         return self._connected_people
 
-    async def xbar_person(self, person: ConnectedPerson, session: aiohttp.ClientSession, **params: Any):
-        avatar = await person.person.avatar_b64(session, size=26)
+    async def xbar_person(self, session: aiohttp.ClientSession, person: Person, size: int = 26, prefix: str = "", **params: Any):
+        avatar = await person.avatar_b64(session, size=size)
         if avatar:
             params["image"] = avatar
         else:
             params["sfimage"] = "person.fill" if person.known else "person.fill.questionmark"
 
-        xbar(person.person.display_name, **params)
+        xbar(prefix + person.display_name, **params)
+
+    async def xbar_connection(self, conn: Connection, **params: Any):
+        xbar("Summary")
+        with xbar_submenu():
+            xbar(conn.summary, symbolize=False)
+
+        xbar_kv("Known:", "Yes" if conn.known else "No", tabs=2, separator=True)
+        xbar_kv("Role:", conn.role.display_name, tabs=2)
+        xbar_kv("Device:", conn.device.display_name, tabs=2)
+        xbar_kv("Network:", conn.network.display_name, tabs=2)
+
+        if conn.home and conn.room:
+            xbar_kv("Home:", conn.home.display_name, tabs=2, separator=True)
+            xbar_kv("Room:", conn.room.display_name, tabs=2)
+
+        metadata = conn.metadata
+
+        xbar_kv("IP:", metadata.ip, tabs=3, copy=True, separator=True)
+        if metadata.mac:
+            value = metadata.mac
+            if metadata.mac_is_private:
+                value += " (private)"
+
+            xbar_kv("MAC:", value, tabs=2, copy=metadata.mac)
+        if metadata.wifi_ssid:
+            xbar_kv("WiFi:", metadata.wifi_ssid, tabs=2)
+
+        xbar("Metadata", separator=True)
 
         with xbar_submenu():
-            # xbar(person.connection.summary, symbolize=False, separator=True)
-
-            xbar_kv("Known:", "Yes" if person.known else "No", tabs=2, separator=True)
-            xbar_kv("Role:", person.role.display_name, tabs=2)
-            xbar_kv("Device:", person.connection.device.display_name, tabs=2)
-
-            xbar_kv("IP:", person.connection.metadata.ip, tabs=3, copy=True, separator=True)
-            xbar_kv("Network:", person.connection.network.display_name, tabs=2)
-            xbar_kv("WiFi:", person.connection.metadata.wifi_ssid, tabs=2)
-
-            xbar("Metadata", separator=True)
-
-            with xbar_submenu():
-                for key, value in person.connection.metadata.model_dump().items():
-                    xbar_kv(f"{key} = ", value)
+            for key, value in metadata.model_dump().items():
+                xbar_kv(f"{key} = ", value)
 
     def xbar_icon(self, device_count: int | None = None):
         xbar(templateImage=MENUBAR_NUMBER_ICONS_B64.get(device_count or -1, MENUBAR_ICON_B64))
@@ -371,12 +403,14 @@ async def main():
 
     async with app.get_session() as session:
         try:
+            connection = await app.connection(session)
+            # TODO: If only people fails, still show current connection
             people = await app.connected_people(session)
         except Exception as err:
             app.xbar_icon()
 
             app.xbar_error(
-                "Failed to load connected people",
+                "Failed to load...",
                 err,
                 separator=True,
             )
@@ -387,18 +421,36 @@ async def main():
 
         app.xbar_icon(len(people))
 
+        if connection.person:
+            await app.xbar_person(session, connection.person, prefix="Welcome ", size=18, href=SERVER_URL, separator=True)
+        else:
+            # TODO: Show more nicely
+            xbar(connection.device.display_name, separator=True)
+
+        with xbar_submenu():
+            await app.xbar_connection(connection)
+
+            app.xbar_refresh(separator=True)
+            app.xbar_open()
+
         if people:
-            room_people: dict[str, list[ConnectedPerson]] = defaultdict(list)
+            home_room_people: dict[str, dict[str, list[ConnectedPerson]]] = defaultdict(lambda: defaultdict(list))
             for person in people:
-                # TODO: Better handle multiple homes
-                if person.room_label:
-                    room_people[person.room_label].append(person)
+                if person.home and person.room:
+                    home_room_people[person.home.display_name][person.room.display_name].append(person)
 
-            for room_label, people in room_people.items():
-                xbar(room_label, separator=True)
+            for home_name, room_people in home_room_people.items():
+                if len(home_room_people) > 1:
+                    xbar(home_name, separator=True)
 
-                for person in people:
-                    await app.xbar_person(person, session)
+                for room_name, people in room_people.items():
+                    xbar(room_name, separator=True)
+
+                    for person in people:
+                        await app.xbar_person(session, person.person)
+
+                        with xbar_submenu():
+                            await app.xbar_connection(person.connection)
 
                 if len(people) > 5:
                     xbar(f"{len(people)} people", size=11)
@@ -406,9 +458,6 @@ async def main():
             xbar(separator=True)
         else:
             xbar("No one's home", separator=True)
-
-    app.xbar_refresh()
-    app.xbar_open()
 
 if __name__ == "__main__":
     asyncio.run(main())
