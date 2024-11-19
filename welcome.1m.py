@@ -78,16 +78,26 @@ def xbar(text: str | None = None, separator: bool = False, nest: int = -1, **par
     if os.getenv("SWIFTBAR") != "1":
         params.pop("symbolize", None)
 
-    for key, value in params.items():
-        if value is not None:
-            segments.append(f"| {key}={value}")
+    params_segments = [f"{key}={value}" for key, value in params.items() if value is not None]
+    if params_segments:
+        segments.append("|")
+        segments.extend(params_segments)
 
     if segments:
         print("--" * nest + " ".join(segments))
 
 
-def xbar_kv(label: str, value: Any, tabs: int = 0, **params: Any):
-    xbar("".join([label, "\t" * tabs, str(value)]), symbolize=False, **params)
+def xbar_kv(label: str, value: Any, tabs: int = 0, copy: bool = False, **params: Any):
+    params["symbolize"] = False
+
+    if copy:
+        # Copy value to clipboard (only tested on macOS)
+        params["bash"] = shutil.which("bash")
+        params["param0"] = "-c"
+        params["param1"] = f'"echo -n {value} | pbcopy"'
+        params["terminal"] = False
+
+    xbar("".join([label, "\t" * tabs, str(value)]), **params)
 
 
 async def resize_image_data(data: bytes, size: int) -> bytes:
@@ -256,13 +266,11 @@ class WelcomeApp:
         return self._connected_people
 
     async def xbar_person(self, person: ConnectedPerson, session: aiohttp.ClientSession, **params: Any):
-        avatar = await person.avatar_b64(session, size=24)
+        avatar = await person.avatar_b64(session, size=26)
         if avatar:
             params["image"] = avatar
         else:
             params["sfimage"] = "person.fill" if person.known else "person.fill.questionmark"
-
-        params["size"] = 14
 
         xbar(person.name, **params)
 
@@ -273,8 +281,8 @@ class WelcomeApp:
             xbar_kv("Role:", person.role_name, tabs=2)
             xbar_kv("Device:", person.device_name, tabs=2)
 
-            xbar_kv("Network:", person.network_name, tabs=2, separator=True)
-            xbar_kv("IP:", person.ip, tabs=3)
+            xbar_kv("IP:", person.ip, tabs=3, copy=True, separator=True)
+            xbar_kv("Network:", person.network_name, tabs=2)
             xbar_kv("WiFi:", person.wifi_ssid, tabs=2)
 
             xbar("Metadata", separator=True)
@@ -312,8 +320,8 @@ async def main():
                 err,
                 separator=True,
             )
-            app.xbar_open()
             app.xbar_refresh()
+            app.xbar_open()
 
             return
 
@@ -339,7 +347,7 @@ async def main():
             xbar("No one's home", separator=True)
 
     app.xbar_refresh()
-    app.xbar_open(alternate=True)
+    app.xbar_open()
 
     # TODO: Include info on /api/me?
     # TODO: Remember token for auth
