@@ -488,7 +488,7 @@ async def main():
                     xbar(home_name, sfimage="house.fill", size=15, separator=True)
 
                 for room_name, people in room_people.items():
-                    xbar(room_name, separator=True)
+                    xbar(room_name, size=14, separator=True)
 
                     for person in people:
                         await app.xbar_person(session, person.person, avatar_size=26)
