@@ -95,7 +95,7 @@ def xbar(text: str | None = None, separator: bool = False, nest: int = -1, **par
 
 
 def xbar_kv(label: str, value: Any, tabs: int = 0, copy: bool | str = False, **params: Any):
-    params["symbolize"] = False
+    params["symbolize"] = params.get("symbolize", False)
 
     if copy:
         copy_value = copy if isinstance(copy, str) else value
@@ -342,14 +342,17 @@ class WelcomeApp:
 
         return self._connected_people
 
-    async def xbar_person(self, session: aiohttp.ClientSession, person: Person, size: int = 26, prefix: str = "", **params: Any):
-        avatar = await person.avatar_b64(session, size=size)
+    async def xbar_person(self, session: aiohttp.ClientSession, person: Person, avatar_size: int = 18, text_size: int | None = None, prefix: str = "", suffix: str = "", **params: Any):
+        avatar = await person.avatar_b64(session, size=avatar_size)
         if avatar:
             params["image"] = avatar
         else:
             params["sfimage"] = "person.fill" if person.known else "person.fill.questionmark"
 
-        xbar(prefix + person.display_name, **params)
+        if text_size:
+            params["size"] = text_size
+
+        xbar(prefix + person.display_name + suffix, **params)
 
     async def xbar_connection(self, conn: Connection, **params: Any):
         xbar("Summary")
@@ -422,7 +425,13 @@ async def main():
         app.xbar_icon(len(people))
 
         if connection.person:
-            await app.xbar_person(session, connection.person, prefix="Welcome ", size=18, href=SERVER_URL, separator=True)
+            suffix = "**"
+
+            # TODO: Don't hardcode this, get from attrs.xbar?
+            if connection.role.id == "admin":
+                suffix += " :checkmark.shield.fill:"
+
+            await app.xbar_person(session, connection.person, prefix="Welcome **", md=True, suffix=suffix, href=SERVER_URL, separator=True)
         else:
             # TODO: Show more nicely
             xbar(connection.device.display_name, separator=True)
@@ -441,13 +450,13 @@ async def main():
 
             for home_name, room_people in home_room_people.items():
                 if len(home_room_people) > 1:
-                    xbar(home_name, separator=True)
+                    xbar(home_name, sfimage="house.fill", size=15, separator=True)
 
                 for room_name, people in room_people.items():
                     xbar(room_name, separator=True)
 
                     for person in people:
-                        await app.xbar_person(session, person.person)
+                        await app.xbar_person(session, person.person, avatar_size=26)
 
                         with xbar_submenu():
                             await app.xbar_connection(person.connection)
