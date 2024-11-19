@@ -192,6 +192,14 @@ class Network(BaseModel):
                 return "globe"
             case "tailscale":
                 return "bolt.shield.fill"
+            case "residents":
+                return "person.badge.key" # "person.crop.circle.fill.badge.checkmark" # "person.fill.checkmark"
+            case "th-private":
+                return "person.badge.key" # "person.crop.circle.fill.badge.checkmark" # "person.fill.checkmark"
+            case "visitors":
+                return "person.badge.clock" # "person.crop.circle.fill.badge.questionmark" # "person.fill.questionmark"
+            case "awaysys":
+                return "airplane.circle"
             case _:
                 return "network"
 
@@ -269,6 +277,10 @@ class Role(BaseModel):
                 return "accessibility.fill"
             case "parent":
                 return "figure.and.child.holdinghands"
+            case "resident":
+                return "person.badge.key" # "person.crop.circle.fill.badge.checkmark" # "person.fill.checkmark"
+            case "visitor":
+                return "person.badge.clock" # "person.crop.circle.fill.badge.questionmark" # "person.fill.questionmark"
             case _:
                 return "person.badge.key"
 
@@ -399,8 +411,8 @@ class WelcomeApp:
         xbar(conn.network.display_name, sfimage=conn.network.icon_name)
 
         if conn.home and conn.room:
-            xbar(conn.home.display_name, sfimage="house.fill", separator=True)
-            xbar(conn.room.display_name, sfimage="door.left.hand.closed")
+            xbar(conn.home.display_name, sfimage="house", separator=True)
+            xbar(conn.room.display_name, sfimage="door.left.hand.open")
 
         metadata = conn.metadata
 
