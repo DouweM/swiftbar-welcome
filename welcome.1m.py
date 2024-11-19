@@ -4,6 +4,7 @@
 # requires-python = ">=3.13"
 # dependencies = [
 #     "aiohttp",
+#     "pydantic",
 #     "yarl",
 # ]
 # ///
@@ -29,6 +30,7 @@ from collections import defaultdict
 from yarl import URL
 from aiohttp.cookiejar import CookieJar
 import pickle
+from pydantic import BaseModel
 
 MENUBAR_ICON_B64 = "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"
 
@@ -180,60 +182,29 @@ async def read_url(url: str, session: aiohttp.ClientSession) -> bytes | None:
     except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
         return None
 
+class Network(BaseModel):
+    id: str
+    display_name: str
 
-class ConnectedPerson:
-    def __init__(self, raw: dict[str, Any]):
-        self.raw = raw
+class Device(BaseModel):
+    known: bool
+    ids: set[str]
+    display_name: str
 
-    @property
-    def known(self):
-        return self.raw.get("known", False)
+    attrs: dict[str, Any] = {}
 
-    @property
-    def name(self):
-        return self.raw["person"]["display_name"]
+    type: str | None
+    tracker: bool
+    personal: bool
 
-    @property
-    def avatar_url(self):
-        return self.raw["person"]["avatar_url"]
+class Person(BaseModel):
+    known: bool
+    id: str
+    display_name: str
 
-    @property
-    def home_name(self):
-        return self.raw["home"]["display_name"]
+    avatar_url: str | None
 
-    @property
-    def room_name(self):
-        room = self.raw.get("room", {})
-        room_name = room.get("display_name") if room else "Unknown"
-        return f"{room_name} ({self.home_name})"
-
-    @property
-    def role_name(self):
-        return self.raw["role"]["display_name"]
-
-    @property
-    def device_name(self):
-        return self.raw["connection"]["device"]["display_name"]
-
-    @property
-    def network_name(self):
-        return self.raw["connection"]["network"]["display_name"]
-
-    @property
-    def connection_summary(self):
-        return self.raw["connection"]["summary"]
-
-    @property
-    def connection_metadata(self):
-        return self.raw["connection"]["metadata"]
-
-    @property
-    def ip(self):
-        return self.connection_metadata.get("ip")
-
-    @property
-    def wifi_ssid(self):
-        return self.connection_metadata.get("wifi_ssid")
+    attrs: dict[str, Any] = {}
 
     async def avatar(self, session: aiohttp.ClientSession, size: int = 32) -> bytes | None:
         avatar_url = self.avatar_url
@@ -257,6 +228,62 @@ class ConnectedPerson:
             return None
 
         return base64.b64encode(data).decode()
+
+class Role(BaseModel):
+    id: str
+    display_name: str
+
+class Home(BaseModel):
+    id: str
+    display_name: str
+
+    attrs: dict[str, Any] = {}
+
+class Room(BaseModel):
+    id: str
+    display_name: str
+
+    attrs: dict[str, Any] = {}
+
+class Metadata(BaseModel):
+    ip: str | None
+    wifi_ssid: str | None
+
+class Connection(BaseModel):
+    summary: str
+
+    known: bool
+
+    network: Network
+
+    device: Device
+    person: Person | None
+
+    role: Role
+
+    home: Home | None
+    room: Room | None
+
+    metadata: Metadata
+
+class ConnectedPerson(BaseModel):
+    known: bool
+
+    person: Person
+
+    home: Home | None
+    room: Room | None
+
+    role: Role
+
+    connection: Connection
+
+    @property
+    def room_label(self) -> str | None:
+        if self.home and self.room:
+            return f"{self.room.display_name} ({self.home.display_name})"
+
+        return None
 
 class WelcomeApp:
     def __init__(self):
@@ -294,34 +321,34 @@ class WelcomeApp:
                 self._save_cookies()
 
                 raw_people = await response.json()
-                self._connected_people = [ConnectedPerson(raw) for raw in raw_people]
+                self._connected_people = [ConnectedPerson.model_validate(raw) for raw in raw_people]
 
         return self._connected_people
 
     async def xbar_person(self, person: ConnectedPerson, session: aiohttp.ClientSession, **params: Any):
-        avatar = await person.avatar_b64(session, size=26)
+        avatar = await person.person.avatar_b64(session, size=26)
         if avatar:
             params["image"] = avatar
         else:
             params["sfimage"] = "person.fill" if person.known else "person.fill.questionmark"
 
-        xbar(person.name, **params)
+        xbar(person.person.display_name, **params)
 
         with xbar_submenu():
-            # xbar(person.connection_summary, symbolize=False, separator=True)
+            # xbar(person.connection.summary, symbolize=False, separator=True)
 
             xbar_kv("Known:", "Yes" if person.known else "No", tabs=2, separator=True)
-            xbar_kv("Role:", person.role_name, tabs=2)
-            xbar_kv("Device:", person.device_name, tabs=2)
+            xbar_kv("Role:", person.role.display_name, tabs=2)
+            xbar_kv("Device:", person.connection.device.display_name, tabs=2)
 
-            xbar_kv("IP:", person.ip, tabs=3, copy=True, separator=True)
-            xbar_kv("Network:", person.network_name, tabs=2)
-            xbar_kv("WiFi:", person.wifi_ssid, tabs=2)
+            xbar_kv("IP:", person.connection.metadata.ip, tabs=3, copy=True, separator=True)
+            xbar_kv("Network:", person.connection.network.display_name, tabs=2)
+            xbar_kv("WiFi:", person.connection.metadata.wifi_ssid, tabs=2)
 
             xbar("Metadata", separator=True)
 
             with xbar_submenu():
-                for key, value in person.connection_metadata.items():
+                for key, value in person.connection.metadata.model_dump().items():
                     xbar_kv(f"{key} = ", value)
 
     def xbar_icon(self, device_count: int | None = None):
@@ -364,10 +391,11 @@ async def main():
             room_people: dict[str, list[ConnectedPerson]] = defaultdict(list)
             for person in people:
                 # TODO: Better handle multiple homes
-                room_people[person.room_name].append(person)
+                if person.room_label:
+                    room_people[person.room_label].append(person)
 
-            for room_name, people in room_people.items():
-                xbar(room_name, separator=True)
+            for room_label, people in room_people.items():
+                xbar(room_label, separator=True)
 
                 for person in people:
                     await app.xbar_person(person, session)
@@ -381,10 +409,6 @@ async def main():
 
     app.xbar_refresh()
     app.xbar_open()
-
-    # TODO: Include info on /api/me?
-    # TODO: Remember token for auth
-
 
 if __name__ == "__main__":
     asyncio.run(main())
