@@ -70,7 +70,7 @@ def xbar_submenu():
         _nesting -= 1
 
 
-def xbar(text: str | None = None, separator: bool = False, nest: int = -1, **params: Any):
+def xbar(text: str | None = None, separator: bool = False, nest: int = -1, copy: bool | str = False, **params: Any):
     if nest == -1:
         nest = _nesting
 
@@ -85,6 +85,14 @@ def xbar(text: str | None = None, separator: bool = False, nest: int = -1, **par
     if os.getenv("SWIFTBAR") != "1":
         params.pop("symbolize", None)
 
+    # Copy value to clipboard (only tested on macOS)
+    if copy:
+        copy_value = copy if isinstance(copy, str) else text
+        params["bash"] = shutil.which("bash")
+        params["param0"] = "-c"
+        params["param1"] = f'"echo -n {copy_value} | pbcopy"'
+        params["terminal"] = False
+
     params_segments = [f"{key}={value}" for key, value in params.items() if value is not None]
     if params_segments:
         segments.append("|")
@@ -94,17 +102,7 @@ def xbar(text: str | None = None, separator: bool = False, nest: int = -1, **par
         print("--" * nest + " ".join(segments), flush=True)
 
 
-def xbar_kv(label: str, value: Any, tabs: int = 0, copy: bool | str = False, **params: Any):
-    params["symbolize"] = params.get("symbolize", False)
-
-    if copy:
-        copy_value = copy if isinstance(copy, str) else value
-        # Copy value to clipboard (only tested on macOS)
-        params["bash"] = shutil.which("bash")
-        params["param0"] = "-c"
-        params["param1"] = f'"echo -n {copy_value} | pbcopy"'
-        params["terminal"] = False
-
+def xbar_kv(label: str, value: Any, tabs: int = 0, **params: Any):
     xbar("".join([label, "\t" * tabs, str(value)]), **params)
 
 
@@ -187,6 +185,16 @@ class Network(BaseModel):
     id: str
     display_name: str
 
+    @property
+    def icon_name(self) -> str:
+        match self.id:
+            case "public":
+                return "globe"
+            case "tailscale":
+                return "bolt.shield.fill"
+            case _:
+                return "network"
+
 class Device(BaseModel):
     known: bool
     ids: set[str]
@@ -197,6 +205,23 @@ class Device(BaseModel):
     type: str | None
     tracker: bool
     personal: bool
+
+    @property
+    def icon_name(self) -> str:
+        # TODO: Get from attrs
+        match self.type:
+            case "phone":
+                return "iphone"
+            case "tablet":
+                return "ipad"
+            case "desktop":
+                return "desktopcomputer"
+            case "laptop":
+                return "laptopcomputer"
+            case "wearable":
+                return "applewatch"
+            case _:
+                return "externaldrive.badge.questionmark"
 
 class Person(BaseModel):
     known: bool
@@ -233,6 +258,19 @@ class Person(BaseModel):
 class Role(BaseModel):
     id: str
     display_name: str
+
+    @property
+    def icon_name(self) -> str:
+        # TODO: Get from attrs
+        match self.id:
+            case "admin":
+                return "checkmark.shield.fill"
+            case "staff":
+                return "accessibility.fill"
+            case "parent":
+                return "figure.and.child.holdinghands"
+            case _:
+                return "person.badge.key"
 
 class Home(BaseModel):
     id: str
@@ -355,36 +393,31 @@ class WelcomeApp:
         xbar(prefix + person.display_name + suffix, **params)
 
     async def xbar_connection(self, conn: Connection, **params: Any):
-        xbar("Summary")
-        with xbar_submenu():
-            xbar(conn.summary, symbolize=False)
-
-        xbar_kv("Known:", "Yes" if conn.known else "No", tabs=2, separator=True)
-        xbar_kv("Role:", conn.role.display_name, tabs=2)
-        xbar_kv("Device:", conn.device.display_name, tabs=2)
-        xbar_kv("Network:", conn.network.display_name, tabs=2)
+        xbar("Known" if conn.known else "Unknown", sfimage="person.fill.questionmark" if not conn.known else "person.fill.checkmark", separator=True)
+        xbar(conn.role.display_name, sfimage=conn.role.icon_name)
+        xbar(conn.device.display_name, sfimage=conn.device.icon_name)
+        xbar(conn.network.display_name, sfimage=conn.network.icon_name)
 
         if conn.home and conn.room:
-            xbar_kv("Home:", conn.home.display_name, tabs=2, separator=True)
-            xbar_kv("Room:", conn.room.display_name, tabs=2)
+            xbar(conn.home.display_name, sfimage="house.fill", separator=True)
+            xbar(conn.room.display_name, sfimage="door.left.hand.closed")
 
         metadata = conn.metadata
 
-        xbar_kv("IP:", metadata.ip, tabs=3, copy=True, separator=True)
+        xbar(metadata.ip, sfimage="wifi.router", copy=True, separator=True)
         if metadata.mac:
-            value = metadata.mac
-            if metadata.mac_is_private:
-                value += " (private)"
-
-            xbar_kv("MAC:", value, tabs=2, copy=metadata.mac)
+            xbar(metadata.mac, sfimage="questionmark.key.filled" if metadata.mac_is_private else "key.horizontal.fill", copy=True, symbolize=False)
         if metadata.wifi_ssid:
-            xbar_kv("WiFi:", metadata.wifi_ssid, tabs=2)
+            xbar(metadata.wifi_ssid, sfimage="wifi")
 
-        xbar("Metadata", separator=True)
+        xbar("Summary", separator=True)
+        with xbar_submenu():
+            xbar(conn.summary, symbolize=False)
 
+        xbar("Metadata")
         with xbar_submenu():
             for key, value in metadata.model_dump().items():
-                xbar_kv(f"{key} = ", value)
+                xbar_kv(f"{key} = ", value, symbolize=False)
 
     def xbar_icon(self, device_count: int | None = None):
         xbar(templateImage=MENUBAR_NUMBER_ICONS_B64.get(device_count or -1, MENUBAR_ICON_B64))
@@ -425,13 +458,15 @@ async def main():
         app.xbar_icon(len(people))
 
         if connection.person:
+            prefix = "Welcome **"
             suffix = "**"
 
-            # TODO: Don't hardcode this, get from attrs.xbar?
-            if connection.role.id == "admin":
-                suffix += " :checkmark.shield.fill:"
+            if role_icon := connection.role.icon_name:
+                suffix += f" :{role_icon}:"
+            if network_icon := connection.network.icon_name:
+                suffix += f" :{network_icon}:"
 
-            await app.xbar_person(session, connection.person, prefix="Welcome **", md=True, suffix=suffix, href=SERVER_URL, separator=True)
+            await app.xbar_person(session, connection.person, md=True, prefix=prefix, suffix=suffix, href=SERVER_URL, separator=True)
         else:
             # TODO: Show more nicely
             xbar(connection.device.display_name, separator=True)
