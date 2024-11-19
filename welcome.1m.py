@@ -274,7 +274,7 @@ class Role(BaseModel):
             case "admin":
                 return "checkmark.shield.fill"
             case "staff":
-                return "accessibility.fill"
+                return "accessibility"
             case "parent":
                 return "figure.and.child.holdinghands"
             case "resident":
@@ -309,6 +309,9 @@ class Connection(BaseModel):
     summary: str
 
     known: bool
+
+    active_ids: list[str]
+    known_active_ids: list[str]
 
     network: Network
 
@@ -404,11 +407,11 @@ class WelcomeApp:
 
         xbar(prefix + person.display_name + suffix, **params)
 
-    async def xbar_connection(self, conn: Connection, **params: Any):
+    async def xbar_connection(self, conn: Connection):
         xbar("Known" if conn.known else "Unknown", sfimage="person.fill.questionmark" if not conn.known else "person.fill.checkmark", separator=True)
         xbar(conn.role.display_name, sfimage=conn.role.icon_name)
-        xbar(conn.device.display_name, sfimage=conn.device.icon_name)
         xbar(conn.network.display_name, sfimage=conn.network.icon_name)
+        xbar(conn.device.display_name, sfimage=conn.device.icon_name)
 
         if conn.home and conn.room:
             xbar(conn.home.display_name, sfimage="house", separator=True)
@@ -418,9 +421,9 @@ class WelcomeApp:
 
         xbar(metadata.ip, sfimage="wifi.router", copy=True, separator=True)
         if metadata.mac:
-            xbar(metadata.mac, sfimage="questionmark.key.filled" if metadata.mac_is_private else "key.horizontal.fill", copy=True, symbolize=False)
+            xbar(metadata.mac, sfimage="externaldrive.badge.questionmark" if metadata.mac_is_private else "externaldrive", copy=True, symbolize=False)
         if metadata.wifi_ssid:
-            xbar(metadata.wifi_ssid, sfimage="wifi")
+            xbar(metadata.wifi_ssid, sfimage="wifi.circle")
 
         xbar("Summary", separator=True)
         with xbar_submenu():
@@ -428,8 +431,13 @@ class WelcomeApp:
 
         xbar("Metadata")
         with xbar_submenu():
+            xbar_kv("Active IDs:", conn.active_ids, tabs=2)
+            xbar_kv("Known Active IDs:", conn.known_active_ids, tabs=1)
+
+            separator = True
             for key, value in metadata.model_dump().items():
-                xbar_kv(f"{key} = ", value, symbolize=False)
+                xbar_kv(f"{key} = ", value, symbolize=False, separator=separator)
+                separator = False
 
     def xbar_icon(self, device_count: int | None = None):
         xbar(templateImage=MENUBAR_NUMBER_ICONS_B64.get(device_count or -1, MENUBAR_ICON_B64))
@@ -497,7 +505,7 @@ async def main():
 
             for home_name, room_people in home_room_people.items():
                 if len(home_room_people) > 1:
-                    xbar(home_name, sfimage="house.fill", size=15, separator=True)
+                    xbar(home_name, sfimage="house", size=15, separator=True)
 
                 for room_name, people in room_people.items():
                     xbar(room_name, size=14, separator=True)
