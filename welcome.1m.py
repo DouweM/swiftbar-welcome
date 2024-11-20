@@ -22,7 +22,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-from typing import Any
+from typing import Any, cast
 import aiohttp
 import asyncio
 import base64
@@ -53,29 +53,30 @@ MENUBAR_NUMBER_ICONS_B64 = {
 # TODO: Make configurable in env
 SERVER_URL = "https://oasis.fan"
 
-_nesting = 0
 
 # Add after SERVER_URL constant
 COOKIE_FILE = Path(__file__).parent / ".welcome_cookies"
 
 
+xbar_nesting = 0
+
 @contextmanager
 def xbar_submenu():
-    global _nesting
+    global xbar_nesting
 
-    _nesting += 1
+    xbar_nesting += 1
     try:
         yield
     finally:
-        _nesting -= 1
+        xbar_nesting -= 1
 
+def xbar_sep():
+    global xbar_nesting
 
-def xbar(text: str | None = None, separator: bool = False, nest: int = -1, copy: bool | str = False, **params: Any):
-    if nest == -1:
-        nest = _nesting
+    print("--" * xbar_nesting + "---", flush=True)
 
-    if separator:
-        print("--" * nest + "---", flush=True)
+def xbar(text: Any | None = None, copy: bool | str = False, **params: Any):
+    global xbar_nesting
 
     segments: list[str] = []
 
@@ -87,10 +88,10 @@ def xbar(text: str | None = None, separator: bool = False, nest: int = -1, copy:
 
     # Copy value to clipboard (only tested on macOS)
     if copy:
-        copy_value = copy if isinstance(copy, str) else text
+        copy_value = text if copy == True else copy
         params["bash"] = shutil.which("bash")
         params["param0"] = "-c"
-        params["param1"] = f'"echo -n {copy_value} | pbcopy"'
+        params["param1"] = f'"echo -n {str(copy_value)} | pbcopy"'
         params["terminal"] = False
 
     params_segments = [f"{key}={value}" for key, value in params.items() if value is not None]
@@ -99,10 +100,13 @@ def xbar(text: str | None = None, separator: bool = False, nest: int = -1, copy:
         segments.extend(params_segments)
 
     if segments:
-        print("--" * nest + " ".join(segments), flush=True)
+        print("--" * xbar_nesting + " ".join(segments), flush=True)
 
 
 def xbar_kv(label: str, value: Any, tabs: int = 0, **params: Any):
+    if isinstance(value, list):
+        value = ", ".join(cast(list[str], value))
+
     xbar("".join([label, "\t" * tabs, str(value)]), **params)
 
 
@@ -401,44 +405,44 @@ class WelcomeApp:
         xbar(prefix + person.display_name + suffix, **params)
 
     async def xbar_connection(self, conn: Connection):
-        xbar("Known" if conn.known else "Unknown", sfimage="person.fill.checkmark" if conn.known else "person.fill.questionmark", separator=True)
+        xbar_sep()
+        xbar("Known" if conn.known else "Unknown", sfimage="person.fill.checkmark" if conn.known else "person.fill.questionmark")
         xbar(conn.role.display_name, sfimage=conn.role.sf_symbol or "person.circle")
         xbar(conn.network.display_name, sfimage=conn.network.sf_symbol or "network")
         xbar(conn.device.display_name, sfimage=conn.device.sf_symbol or "externaldrive.badge.questionmark")
 
         if conn.home and conn.room:
-            xbar(conn.home.display_name, sfimage="house", separator=True)
+            xbar_sep()
+            xbar(conn.home.display_name, sfimage="house")
             xbar(conn.room.display_name, sfimage="door.left.hand.open")
 
         metadata = conn.metadata
 
-        separator = True
+        xbar_sep()
         if metadata.ip:
-            xbar(metadata.ip, sfimage="wifi.router", copy=True, separator=separator)
-            separator = False
+            xbar(metadata.ip, sfimage="externaldrive.connected.to.line.below", copy=True)
         if metadata.mac:
-            xbar(metadata.mac, sfimage="externaldrive.badge.questionmark" if metadata.mac_is_private else "externaldrive", copy=True, symbolize=False, separator=separator)
-            separator = False
+            xbar(metadata.mac, sfimage="externaldrive.badge.questionmark" if metadata.mac_is_private else "externaldrive", copy=True, symbolize=False)
         if metadata.wifi_ssid:
-            xbar(metadata.wifi_ssid, sfimage="wifi.circle", separator=separator)
-            separator = False
+            xbar(metadata.wifi_ssid, sfimage="wifi.circle")
 
-        xbar("Summary", separator=True)
+        xbar_sep()
+        xbar("Summary")
         with xbar_submenu():
             xbar(conn.summary, symbolize=False)
 
         xbar("Metadata")
         with xbar_submenu():
-            xbar_kv("Active IDs:", conn.active_ids, tabs=2)
-            xbar_kv("Known Active IDs:", conn.known_active_ids, tabs=1)
+            xbar(", ".join(conn.active_ids) if conn.active_ids else "None", tabs=2, sfimage="externaldrive.badge.wifi")
+            xbar(", ".join(conn.known_active_ids) if conn.known_active_ids else "None", tabs=1, sfimage="externaldrive.badge.checkmark")
 
-            separator = True
+            xbar_sep()
             for key, value in metadata.model_dump().items():
-                xbar_kv(f"{key} = ", value, symbolize=False, separator=separator)
-                separator = False
+                xbar_kv(f"{key} = ", value, symbolize=False)
 
     def xbar_icon(self, device_count: int | None = None):
         xbar(templateImage=MENUBAR_NUMBER_ICONS_B64.get(device_count or -1, MENUBAR_ICON_B64))
+        xbar_sep()
 
     def xbar_refresh(self, **params: Any):
         xbar("Refresh", refresh=True, **params)
@@ -463,11 +467,8 @@ async def main():
         except Exception as err:
             app.xbar_icon()
 
-            app.xbar_error(
-                "Failed to load...",
-                err,
-                separator=True,
-            )
+            app.xbar_error("Failed to load...", err)
+            xbar_sep()
             app.xbar_refresh()
             app.xbar_open()
 
@@ -484,15 +485,16 @@ async def main():
             if network_icon := connection.network.sf_symbol:
                 suffix += f" :{network_icon}:"
 
-            await app.xbar_person(session, connection.person, md=True, prefix=prefix, suffix=suffix, href=SERVER_URL, separator=True)
+            await app.xbar_person(session, connection.person, md=True, prefix=prefix, suffix=suffix, href=SERVER_URL)
         else:
             # TODO: Show more nicely
-            xbar(connection.device.display_name, separator=True)
+            xbar(connection.device.display_name)
 
         with xbar_submenu():
             await app.xbar_connection(connection)
 
-            app.xbar_refresh(separator=True)
+            xbar_sep()
+            app.xbar_refresh()
             app.xbar_open()
 
         if people:
@@ -503,23 +505,20 @@ async def main():
 
             for home_name, room_people in home_room_people.items():
                 if len(home_room_people) > 1:
-                    xbar(home_name, sfimage="house", size=15, separator=True)
+                    xbar_sep()
+                    xbar(home_name, sfimage="house", size=15)
 
                 for room_name, people in room_people.items():
-                    xbar(room_name, size=14, separator=True)
+                    xbar_sep()
+                    xbar(room_name, size=14)
 
                     for person in people:
                         await app.xbar_person(session, person.person, avatar_size=26)
 
                         with xbar_submenu():
                             await app.xbar_connection(person.connection)
-
-                if len(people) > 5:
-                    xbar(f"{len(people)} people", size=11)
-
-            xbar(separator=True)
         else:
-            xbar("No one's home", separator=True)
+            xbar("No one's home")
 
 if __name__ == "__main__":
     asyncio.run(main())
