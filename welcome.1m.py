@@ -17,6 +17,7 @@
 # <swiftbar.hideSwiftBar>true</swiftbar.hideSwiftBar>
 
 from contextlib import contextmanager
+from enum import Enum
 from pathlib import Path
 import shutil
 import subprocess
@@ -49,9 +50,8 @@ MENUBAR_NUMBER_ICONS_B64 = {
     9: f"{b64_prefix}LwPy6vZFAAAAAW9yTlQBz6J3mgAAAzpJREFUSMeNk91rHFUYh58zc2YnO7truhCxpoVUBW1siUpEKwkiiKV+VFoq3Xgjov4BVkEQDfSi/gleCH7infTCu95p8cabkNBu0xRsIwUVv+pXt5vu7M7+vJiT2d1kN7u/gTnnzPu+z5nzvu+BbpmeWQ7uOGJvev+Gh9PVKDLwbDh+L/fs250G3X/MF0Ko/AIQjISYKNk1I+pW9m24rxIJmZgY+br7+CgYA0/k89cQTU+TlUeeDoVMAyEaKNDeE6NgAog+QiTU7no3L2Ruo7FqrprOjPzKcIwFPkM0SXAIs/5AaaJk1hG3EWIoxgKfIpqINg1kro6XAfbtyv+A2EAM/RsLfOwgDVRemx0HLBbmSsXVTQwLO2FC4EtEixjlr86XM2cLM4XwUoapDOqbHPgvb9aidHmuBFh8PDz8rZjiyX5/kwN/AaUJjFafKgK2p4MtzEa5aooJtGcbJoBcBaUOhRTRVx2M1eSx7kMF4GeIsdWZwk4lnI1sFZkN5Kt8dBMTQD5DRJdmCq5OY7zDEn9R50fOcrhTwdkouJh6G0XPu0NNvGhdOsMOYhcXUM/zQQezN28vphFG/nNAeMQIEaNw5UDRIdJSC7HC59xw86MdzGRkl9MoVHiG4AYyMQnKP54laiI1s4IF9pNew7XuWgaPIRITo+h3z49BAcCGARIAHnTFO0cLuML3AOxn2hU9gaYHSAGo5ZVPBuftFbyeEkRu9N3YcuPDXZ0D4JtrwTfFhXT+OkIccmE+Uy4Ll8kBe6i59VuZBxxCyDsF4BFCEm5phut8C8A0y3zCEpuds+2+tHNA6JEA6rUAb/AbAAd4jd387Cw1Z+1IQOKxXcKwzqN8wR80WOYlzjvLr5gtGwIY27e3BfzEq9n6fTcu90EAHv11mrMs8SdTwEPMAHCB9f7OdgDkTk4AcI7vOO62Oj3AdyDkPZ7kIDDNtPuyyNeDIIOO8w9znKFKjSa/8BVznGGg7EDLfyyyyEjqhniA7xq7taO/T9J9hm5IDYiHbNrK3jXAtWkHIj7kOrmeThB1IuAWhZ6rZ4iZQpj0itqMJ+aZHy0HTm1MB22BVxB/U6NNfejTps4GNcSbafT/ojtVLdMsay4AAACEZVhJZk1NACoAAAAIAAUBEgADAAAAAQABAAABGgAFAAAAAQAAAEoBGwAFAAAAAQAAAFIBKAADAAAAAQACAACHaQAEAAAAAQAAAFoAAAAAAAAAkAAAAAEAAACQAAAAAQADoAEAAwAAAAEAAQAAoAIABAAAAAEAAAAioAMABAAAAAEAAAAiAAAAABBCQMEAAAAldEVYdGRhdGU6Y3JlYXRlADIwMjItMTItMzBUMDA6NDc6MDIrMDA6MDClH7CTAAAAJXRFWHRkYXRlOm1vZGlmeQAyMDIyLTEyLTMwVDAwOjQ3OjAyKzAwOjAw1EIILwAAABF0RVh0ZXhpZjpDb2xvclNwYWNlADEPmwJJAAAAEnRFWHRleGlmOkV4aWZPZmZzZXQAOTBZjN6bAAAAF3RFWHRleGlmOlBpeGVsWERpbWVuc2lvbgAzNGHPwiIAAAAXdEVYdGV4aWY6UGl4ZWxZRGltZW5zaW9uADM0vFkbpwAAAABJRU5ErkJggg==",
 }
 
-# TODO: Make configurable
+# TODO: Make configurable in env
 SERVER_URL = "https://oasis.fan"
-# HOME_ID = "treehouse"
 
 _nesting = 0
 
@@ -185,23 +185,40 @@ class Network(BaseModel):
     id: str
     display_name: str
 
+    attrs: dict[str, Any] = {}
+
     @property
-    def icon_name(self) -> str:
-        match self.id:
-            case "public":
-                return "globe"
-            case "tailscale":
-                return "bolt.shield.fill"
-            case "residents":
-                return "person.badge.key" # "person.crop.circle.fill.badge.checkmark" # "person.fill.checkmark"
-            case "th-private":
-                return "person.badge.key" # "person.crop.circle.fill.badge.checkmark" # "person.fill.checkmark"
-            case "visitors":
-                return "person.badge.clock" # "person.crop.circle.fill.badge.questionmark" # "person.fill.questionmark"
-            case "awaysys":
-                return "airplane.circle"
+    def sf_symbol(self) -> str | None:
+        return self.attrs.get("sf_symbol")
+
+class DeviceType(str, Enum):
+    phone = "phone"
+    wearable = "wearable"
+    handheld = "handheld"
+
+    laptop = "laptop"
+    tablet = "tablet"
+    desktop = "desktop"
+
+    other = "other"
+
+    @property
+    def sf_symbol(self) -> str | None:
+        match self:
+            case DeviceType.phone | DeviceType.handheld:
+                return "iphone"
+            case DeviceType.wearable:
+                return "applewatch"
+
+            case DeviceType.tablet:
+                return "ipad"
+            case DeviceType.desktop:
+                return "desktopcomputer"
+            case DeviceType.laptop:
+                return "laptopcomputer"
+
             case _:
-                return "network"
+                return None
 
 class Device(BaseModel):
     known: bool
@@ -210,26 +227,13 @@ class Device(BaseModel):
 
     attrs: dict[str, Any] = {}
 
-    type: str | None
+    type: DeviceType | None
     tracker: bool
     personal: bool
 
     @property
-    def icon_name(self) -> str:
-        # TODO: Get from attrs
-        match self.type:
-            case "phone":
-                return "iphone"
-            case "tablet":
-                return "ipad"
-            case "desktop":
-                return "desktopcomputer"
-            case "laptop":
-                return "laptopcomputer"
-            case "wearable":
-                return "applewatch"
-            case _:
-                return "externaldrive.badge.questionmark"
+    def sf_symbol(self) -> str | None:
+        return self.type.sf_symbol if self.type else None
 
 class Person(BaseModel):
     known: bool
@@ -267,22 +271,11 @@ class Role(BaseModel):
     id: str
     display_name: str
 
+    attrs: dict[str, Any] = {}
+
     @property
-    def icon_name(self) -> str:
-        # TODO: Get from attrs
-        match self.id:
-            case "admin":
-                return "checkmark.shield.fill"
-            case "staff":
-                return "accessibility"
-            case "parent":
-                return "figure.and.child.holdinghands"
-            case "resident":
-                return "person.badge.key" # "person.crop.circle.fill.badge.checkmark" # "person.fill.checkmark"
-            case "visitor":
-                return "person.badge.clock" # "person.crop.circle.fill.badge.questionmark" # "person.fill.questionmark"
-            case _:
-                return "person.badge.key"
+    def sf_symbol(self) -> str | None:
+        return self.attrs.get("sf_symbol")
 
 class Home(BaseModel):
     id: str
@@ -408,10 +401,10 @@ class WelcomeApp:
         xbar(prefix + person.display_name + suffix, **params)
 
     async def xbar_connection(self, conn: Connection):
-        xbar("Known" if conn.known else "Unknown", sfimage="person.fill.questionmark" if not conn.known else "person.fill.checkmark", separator=True)
-        xbar(conn.role.display_name, sfimage=conn.role.icon_name)
-        xbar(conn.network.display_name, sfimage=conn.network.icon_name)
-        xbar(conn.device.display_name, sfimage=conn.device.icon_name)
+        xbar("Known" if conn.known else "Unknown", sfimage="person.fill.checkmark" if conn.known else "person.fill.questionmark", separator=True)
+        xbar(conn.role.display_name, sfimage=conn.role.sf_symbol or "person.circle")
+        xbar(conn.network.display_name, sfimage=conn.network.sf_symbol or "network")
+        xbar(conn.device.display_name, sfimage=conn.device.sf_symbol or "externaldrive.badge.questionmark")
 
         if conn.home and conn.room:
             xbar(conn.home.display_name, sfimage="house", separator=True)
@@ -419,11 +412,16 @@ class WelcomeApp:
 
         metadata = conn.metadata
 
-        xbar(metadata.ip, sfimage="wifi.router", copy=True, separator=True)
+        separator = True
+        if metadata.ip:
+            xbar(metadata.ip, sfimage="wifi.router", copy=True, separator=separator)
+            separator = False
         if metadata.mac:
-            xbar(metadata.mac, sfimage="externaldrive.badge.questionmark" if metadata.mac_is_private else "externaldrive", copy=True, symbolize=False)
+            xbar(metadata.mac, sfimage="externaldrive.badge.questionmark" if metadata.mac_is_private else "externaldrive", copy=True, symbolize=False, separator=separator)
+            separator = False
         if metadata.wifi_ssid:
-            xbar(metadata.wifi_ssid, sfimage="wifi.circle")
+            xbar(metadata.wifi_ssid, sfimage="wifi.circle", separator=separator)
+            separator = False
 
         xbar("Summary", separator=True)
         with xbar_submenu():
@@ -481,9 +479,9 @@ async def main():
             prefix = "Welcome **"
             suffix = "**"
 
-            if role_icon := connection.role.icon_name:
+            if role_icon := connection.role.sf_symbol:
                 suffix += f" :{role_icon}:"
-            if network_icon := connection.network.icon_name:
+            if network_icon := connection.network.sf_symbol:
                 suffix += f" :{network_icon}:"
 
             await app.xbar_person(session, connection.person, md=True, prefix=prefix, suffix=suffix, href=SERVER_URL, separator=True)
