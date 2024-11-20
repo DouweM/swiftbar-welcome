@@ -287,11 +287,17 @@ class Home(BaseModel):
 
     attrs: dict[str, Any] = {}
 
+    def __hash__(self):
+        return hash(self.id)
+
 class Room(BaseModel):
     id: str
     display_name: str
 
     attrs: dict[str, Any] = {}
+
+    def __hash__(self):
+        return hash(self.id)
 
 class Metadata(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -317,8 +323,8 @@ class Connection(BaseModel):
 
     role: Role
 
-    home: Home | None
-    room: Room | None
+    home: Home | None = None
+    room: Room | None = None
 
     metadata: Metadata
 
@@ -333,13 +339,6 @@ class ConnectedPerson(BaseModel):
     role: Role
 
     connection: Connection
-
-    @property
-    def room_label(self) -> str | None:
-        if self.home and self.room:
-            return f"{self.room.display_name} ({self.home.display_name})"
-
-        return None
 
 class WelcomeApp:
     def __init__(self):
@@ -411,10 +410,11 @@ class WelcomeApp:
         xbar(conn.network.display_name, sfimage=conn.network.sf_symbol or "network")
         xbar(conn.device.display_name, sfimage=conn.device.sf_symbol or "externaldrive.badge.questionmark")
 
-        if conn.home and conn.room:
+        if conn.home:
             xbar_sep()
             xbar(conn.home.display_name, sfimage="house")
-            xbar(conn.room.display_name, sfimage="door.left.hand.open")
+            if conn.room:
+                xbar(conn.room.display_name, sfimage="door.left.hand.open")
 
         metadata = conn.metadata
 
@@ -498,19 +498,20 @@ async def main():
             app.xbar_open()
 
         if people:
-            home_room_people: dict[str, dict[str, list[ConnectedPerson]]] = defaultdict(lambda: defaultdict(list))
+            home_room_people: dict[Home, dict[Room | None, list[ConnectedPerson]]] = defaultdict(lambda: defaultdict(list))
             for person in people:
-                if person.home and person.room:
-                    home_room_people[person.home.display_name][person.room.display_name].append(person)
+                if person.home:
+                    home_room_people[person.home][person.room].append(person)
 
-            for home_name, room_people in home_room_people.items():
+            for home, room_people in home_room_people.items():
                 if len(home_room_people) > 1:
                     xbar_sep()
-                    xbar(home_name, sfimage="house", size=15)
+                    xbar(home.display_name, sfimage="house", size=15)
 
-                for room_name, people in room_people.items():
-                    xbar_sep()
-                    xbar(room_name, size=14)
+                for room, people in room_people.items():
+                    if room:
+                        xbar_sep()
+                        xbar(room.display_name, size=14)
 
                     for person in people:
                         await app.xbar_person(session, person.person, avatar_size=26)
