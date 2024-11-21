@@ -54,12 +54,13 @@ MENUBAR_NUMBER_ICONS_B64 = {
     9: f"{b64_prefix}LwPy6vZFAAAAAW9yTlQBz6J3mgAAAzpJREFUSMeNk91rHFUYh58zc2YnO7truhCxpoVUBW1siUpEKwkiiKV+VFoq3Xgjov4BVkEQDfSi/gleCH7infTCu95p8cabkNBu0xRsIwUVv+pXt5vu7M7+vJiT2d1kN7u/gTnnzPu+z5nzvu+BbpmeWQ7uOGJvev+Gh9PVKDLwbDh+L/fs250G3X/MF0Ko/AIQjISYKNk1I+pW9m24rxIJmZgY+br7+CgYA0/k89cQTU+TlUeeDoVMAyEaKNDeE6NgAog+QiTU7no3L2Ruo7FqrprOjPzKcIwFPkM0SXAIs/5AaaJk1hG3EWIoxgKfIpqINg1kro6XAfbtyv+A2EAM/RsLfOwgDVRemx0HLBbmSsXVTQwLO2FC4EtEixjlr86XM2cLM4XwUoapDOqbHPgvb9aidHmuBFh8PDz8rZjiyX5/kwN/AaUJjFafKgK2p4MtzEa5aooJtGcbJoBcBaUOhRTRVx2M1eSx7kMF4GeIsdWZwk4lnI1sFZkN5Kt8dBMTQD5DRJdmCq5OY7zDEn9R50fOcrhTwdkouJh6G0XPu0NNvGhdOsMOYhcXUM/zQQezN28vphFG/nNAeMQIEaNw5UDRIdJSC7HC59xw86MdzGRkl9MoVHiG4AYyMQnKP54laiI1s4IF9pNew7XuWgaPIRITo+h3z49BAcCGARIAHnTFO0cLuML3AOxn2hU9gaYHSAGo5ZVPBuftFbyeEkRu9N3YcuPDXZ0D4JtrwTfFhXT+OkIccmE+Uy4Ll8kBe6i59VuZBxxCyDsF4BFCEm5phut8C8A0y3zCEpuds+2+tHNA6JEA6rUAb/AbAAd4jd387Cw1Z+1IQOKxXcKwzqN8wR80WOYlzjvLr5gtGwIY27e3BfzEq9n6fTcu90EAHv11mrMs8SdTwEPMAHCB9f7OdgDkTk4AcI7vOO62Oj3AdyDkPZ7kIDDNtPuyyNeDIIOO8w9znKFKjSa/8BVznGGg7EDLfyyyyEjqhniA7xq7taO/T9J9hm5IDYiHbNrK3jXAtWkHIj7kOrmeThB1IuAWhZ6rZ4iZQpj0itqMJ+aZHy0HTm1MB22BVxB/U6NNfejTps4GNcSbafT/ojtVLdMsay4AAACEZVhJZk1NACoAAAAIAAUBEgADAAAAAQABAAABGgAFAAAAAQAAAEoBGwAFAAAAAQAAAFIBKAADAAAAAQACAACHaQAEAAAAAQAAAFoAAAAAAAAAkAAAAAEAAACQAAAAAQADoAEAAwAAAAEAAQAAoAIABAAAAAEAAAAioAMABAAAAAEAAAAiAAAAABBCQMEAAAAldEVYdGRhdGU6Y3JlYXRlADIwMjItMTItMzBUMDA6NDc6MDIrMDA6MDClH7CTAAAAJXRFWHRkYXRlOm1vZGlmeQAyMDIyLTEyLTMwVDAwOjQ3OjAyKzAwOjAw1EIILwAAABF0RVh0ZXhpZjpDb2xvclNwYWNlADEPmwJJAAAAEnRFWHRleGlmOkV4aWZPZmZzZXQAOTBZjN6bAAAAF3RFWHRleGlmOlBpeGVsWERpbWVuc2lvbgAzNGHPwiIAAAAXdEVYdGV4aWY6UGl4ZWxZRGltZW5zaW9uADM0vFkbpwAAAABJRU5ErkJggg==",
 }
 
-# TODO: Make configurable in env
-SERVER_URL = "https://oasis.fan"
+SERVER_URL_PATH = Path(__file__).parent / ".welcome_server_url"
+try:
+    SERVER_URL = SERVER_URL_PATH.read_text().strip()
+except FileNotFoundError:
+    raise RuntimeError("Server URL not set. Create a file called '.welcome_server_url' in the same directory as this script with the URL as the only content.")
 
-
-# Add after SERVER_URL constant
-COOKIE_FILE = Path(__file__).parent / ".welcome_cookies"
+COOKIE_PATH = Path(__file__).parent / ".welcome_cookies"
 
 
 xbar_nesting = 0
@@ -230,7 +231,7 @@ class DeviceType(str, Enum):
 
 class Device(BaseModel):
     known: bool
-    ids: set[str]
+    ids: list[str]
     display_name: str
 
     attrs: dict[str, Any] = {}
@@ -333,6 +334,11 @@ class Connection(BaseModel):
 
     metadata: Metadata
 
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Connection):
+            return self.network.id == other.network.id and self.active_ids == other.active_ids
+        return False
+
 class ConnectedPerson(BaseModel):
     known: bool
 
@@ -348,15 +354,18 @@ class ConnectedPerson(BaseModel):
 class WelcomeApp:
     def __init__(self):
         self._connection: Connection | None = None
+        self._my_connections: list[Connection] | None = None
         self._connected_people: list[ConnectedPerson] | None = None
+        self._person_connections: dict[str, list[Connection]] = defaultdict(list)
+        self._device_connections: dict[str, list[Connection]] = defaultdict(list)
 
         self._cookie_jar = CookieJar()
         self._load_cookies()
 
     def _load_cookies(self) -> None:
         try:
-            if COOKIE_FILE.exists():
-                with COOKIE_FILE.open('rb') as f:
+            if COOKIE_PATH.exists():
+                with COOKIE_PATH.open('rb') as f:
                     cookies = pickle.load(f)
                     self._cookie_jar.update_cookies(cookies)
         except:
@@ -364,7 +373,7 @@ class WelcomeApp:
 
     def _save_cookies(self) -> None:
         try:
-            with COOKIE_FILE.open('wb') as f:
+            with COOKIE_PATH.open('wb') as f:
                 cookies = self._cookie_jar.filter_cookies(URL(SERVER_URL))
                 pickle.dump(cookies, f)
         except:
@@ -386,6 +395,16 @@ class WelcomeApp:
 
         return self._connection
 
+    async def my_connections(self, session: aiohttp.ClientSession) -> list[Connection]:
+        if self._my_connections is None:
+            async with session.get(f"{SERVER_URL}/api/me/connections") as response:
+                self._save_cookies()
+
+                raw_connections = await response.json()
+                self._my_connections = [Connection.model_validate(raw) for raw in raw_connections]
+
+        return self._my_connections
+
     async def connected_people(self, session: aiohttp.ClientSession) -> list[ConnectedPerson]:
         if self._connected_people is None:
             async with session.get(f"{SERVER_URL}/api/homes/people") as response:
@@ -395,6 +414,33 @@ class WelcomeApp:
                 self._connected_people = [ConnectedPerson.model_validate(raw) for raw in raw_people]
 
         return self._connected_people
+
+    async def device_connections(self, session: aiohttp.ClientSession, device: Device) -> list[Connection]:
+        if not device.known:
+            return []
+
+        id = device.ids[0]
+        if id not in self._device_connections:
+            async with session.get(f"{SERVER_URL}/api/devices/{id}/connections") as response:
+                self._save_cookies()
+
+                raw_connections = await response.json()
+                self._device_connections[id] = [Connection.model_validate(raw) for raw in raw_connections]
+
+        return self._device_connections[id]
+
+    async def person_connections(self, session: aiohttp.ClientSession, person: Person) -> list[Connection]:
+        if not person.known:
+            return []
+
+        if person.id not in self._person_connections:
+            async with session.get(f"{SERVER_URL}/api/people/{person.id}/connections") as response:
+                self._save_cookies()
+
+                raw_connections = await response.json()
+                self._person_connections[person.id] = [Connection.model_validate(raw) for raw in raw_connections]
+
+        return self._person_connections[person.id]
 
     async def xbar_person(self, session: aiohttp.ClientSession, person: Person, avatar_size: int = 18, text_size: int | None = None, prefix: str = "", suffix: str = "", **params: Any):
         avatar = await person.avatar_b64(session, size=avatar_size)
@@ -408,7 +454,16 @@ class WelcomeApp:
 
         xbar(prefix + person.display_name + suffix, **params)
 
-    async def xbar_connection(self, conn: Connection):
+    def xbar_connection(self, conn: Connection):
+        label = conn.device.display_name
+        if (icon := conn.network.sf_symbol):
+            label = f":{icon}: " + label
+        else:
+            label += f" @ {conn.network.display_name}"
+
+        xbar(label, sfimage=conn.device.sf_symbol or "network")
+
+    def xbar_connection_details(self, conn: Connection):
         xbar_sep()
         xbar("Known" if conn.known else "Unknown", sfimage="person.fill.checkmark" if conn.known else "person.fill.questionmark")
         xbar(conn.role.display_name, sfimage=conn.role.sf_symbol or "person.circle")
@@ -469,6 +524,7 @@ async def main():
     async with app.get_session() as session:
         try:
             connection = await app.connection(session)
+            my_connections = await app.my_connections(session)
             # TODO: If only people fails, still show current connection
             people = await app.connected_people(session)
         except Exception as err:
@@ -498,7 +554,30 @@ async def main():
             xbar(connection.device.display_name)
 
         with xbar_submenu():
-            await app.xbar_connection(connection)
+            app.xbar_connection_details(connection)
+
+            other_connections = [conn for conn in my_connections if conn != connection]
+            if other_connections:
+                xbar_sep()
+                xbar("Other Device Connections")
+
+                for conn in other_connections:
+                    xbar(conn.network.display_name, sfimage=conn.network.sf_symbol or "network")
+
+                    with xbar_submenu():
+                        app.xbar_connection_details(conn)
+
+            if connection.person:
+                person_connections = await app.person_connections(session, connection.person)
+                if len(person_connections) > 1:
+                    xbar_sep()
+                    xbar("All Connections")
+
+                    for conn in person_connections:
+                        app.xbar_connection(conn)
+
+                        with xbar_submenu():
+                            app.xbar_connection_details(conn)
 
             xbar_sep()
             app.xbar_refresh()
@@ -520,11 +599,36 @@ async def main():
                         xbar_sep()
                         xbar(room.display_name, size=14)
 
-                    for person in people:
-                        await app.xbar_person(session, person.person, avatar_size=26)
+                    for connected_person in people:
+
+                        await app.xbar_person(session, connected_person.person, avatar_size=26)
 
                         with xbar_submenu():
-                            await app.xbar_connection(person.connection)
+                            app.xbar_connection_details(connected_person.connection)
+
+                            # TODO: Replace with other tracker connections?
+                            # device_connections = await app.device_connections(session, connected_person.connection.device)
+                            # other_connections = [conn for conn in device_connections if conn != connected_person.connection]
+                            # if other_connections:
+                            #     xbar_sep()
+                            #     xbar("Other Device Connections")
+
+                            #     for conn in other_connections:
+                            #         xbar(conn.network.display_name, sfimage=conn.network.sf_symbol or "network")
+
+                            #         with xbar_submenu():
+                            #             app.xbar_connection_details(conn)
+
+                            person_connections = await app.person_connections(session, connected_person.person)
+                            if len(person_connections) > 1:
+                                xbar_sep()
+                                xbar("All Connections")
+
+                                for conn in person_connections:
+                                    app.xbar_connection(conn)
+
+                                    with xbar_submenu():
+                                        app.xbar_connection_details(conn)
         else:
             xbar("No one's home")
 
