@@ -254,7 +254,11 @@ class Person(BaseModel):
 
     avatar_url: str | None
 
-    attrs: dict[str, Any] = {}
+    class Attrs(BaseModel):
+        phone: str | None = None
+        email: str | None = None
+
+    attrs: Attrs = Attrs()
 
     async def avatar(self, session: aiohttp.ClientSession, size: int = 32) -> bytes | None:
         avatar_url = self.avatar_url
@@ -461,7 +465,7 @@ class WelcomeApp:
 
         return self._person_connections[person.id]
 
-    async def xbar_person(self, session: aiohttp.ClientSession, person: Person, avatar_size: int = 18, text_size: int | None = None, prefix: str = "", suffix: str = "", **params: Any):
+    async def xbar_person(self, session: aiohttp.ClientSession, person: Person, avatar_size: int = 17, text_size: int | None = None, prefix: str = "", suffix: str = "", **params: Any):
         avatar = await person.avatar_b64(session, size=avatar_size)
         if avatar:
             params["image"] = avatar
@@ -621,7 +625,7 @@ async def main():
             app.xbar_refresh()
             app.xbar_open()
 
-        home = next((conn.home for conn in my_connections or [connection] if conn.home), None)
+        home = next((conn.home for conn in [*my_connections, connection] if conn.home), None)
         if home:
             address = home.attrs.address
             wifi = home.attrs.wifi
@@ -665,10 +669,30 @@ async def main():
                         xbar(room.display_name, size=14)
 
                     for connected_person in people:
-                        await app.xbar_person(session, connected_person.person, avatar_size=26)
+                        person = connected_person.person
+                        connection = connected_person.connection
+
+                        await app.xbar_person(session, person, avatar_size=26)
 
                         with xbar_submenu():
-                            app.xbar_connection_details(connected_person.connection)
+                            xbar(connection.role.display_name, sfimage=connection.role.sf_symbol or "person.circle")
+
+                            phone = person.attrs.phone
+                            email = person.attrs.email
+                            if phone or email:
+                                xbar_sep()
+                                if phone:
+                                    phone = phone.replace(" ", "").replace("(", "").replace(")", "").replace("-", "")
+                                    xbar("WhatsApp", href=f"https://wa.me/{phone}", sfimage="message")
+                                    xbar("Call", href=f"tel:{phone}", sfimage="phone")
+                                if email:
+                                    xbar("Email", href=f"mailto:{email}", sfimage="envelope")
+
+                            xbar_sep()
+                            xbar("Connection", sfimage=connection.network.sf_symbol or "network")
+
+                            with xbar_submenu():
+                                app.xbar_connection_details(connection)
 
                             # TODO: Replace with other tracker connections?
                             # device_connections = await app.device_connections(session, connected_person.connection.device)
@@ -689,7 +713,6 @@ async def main():
                                 person_connections = []
 
                             if len(person_connections) > 1:
-                                xbar_sep()
                                 xbar("All Connections", sfimage="macbook.and.iphone")
 
                                 with xbar_submenu():
