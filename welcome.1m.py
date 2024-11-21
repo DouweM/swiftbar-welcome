@@ -539,10 +539,11 @@ async def main():
 
         try:
             people = await app.connected_people(session)
+            app.xbar_icon(len(people))
         except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
             people = []
+            app.xbar_icon()
 
-        app.xbar_icon(len(people))
 
         prefix = "Welcome **"
         suffix = "**"
