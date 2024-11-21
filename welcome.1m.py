@@ -20,6 +20,7 @@
 
 from contextlib import contextmanager
 from enum import Enum
+import hashlib
 from pathlib import Path
 import shutil
 import subprocess
@@ -60,7 +61,9 @@ try:
 except FileNotFoundError:
     raise RuntimeError("Server URL not set. Create a file called '.welcome_server_url' in the same directory as this script with the URL as the only content.")
 
-COOKIE_PATH = Path(__file__).parent / ".welcome_cookies"
+WELCOME_DIR = Path.home() / ".welcome"
+COOKIE_PATH = WELCOME_DIR / "cookies"
+CACHE_DIR = WELCOME_DIR / "cache"
 
 
 xbar_nesting = 0
@@ -184,9 +187,20 @@ async def circle_image_data(data: bytes) -> bytes:
     return data
 
 async def read_url(url: str, session: aiohttp.ClientSession) -> bytes | None:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    url_hash = hashlib.sha256(url.encode()).hexdigest()
+    cache_file = CACHE_DIR / url_hash
+
+    if cache_file.exists():
+        return cache_file.read_bytes()
+
     try:
         async with session.get(URL(url, encoded=True)) as response:
-            return await response.read()
+            data = await response.read()
+            cache_file.write_bytes(data)
+
+            return data
     except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
         return None
 
@@ -612,7 +626,7 @@ async def main():
 
                 if len(person_connections) > 1:
                     xbar_sep()
-                    xbar("My Connections", sfimage="macbook.and.iphone")
+                    xbar("Devices", sfimage="macbook.and.iphone")
 
                     with xbar_submenu():
                         for conn in person_connections:
@@ -713,7 +727,7 @@ async def main():
                                 person_connections = []
 
                             if len(person_connections) > 1:
-                                xbar("All Connections", sfimage="macbook.and.iphone")
+                                xbar("Devices", sfimage="macbook.and.iphone")
 
                                 with xbar_submenu():
                                     for conn in person_connections:
