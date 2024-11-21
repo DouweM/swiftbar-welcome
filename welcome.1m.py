@@ -491,14 +491,15 @@ class WelcomeApp:
             xbar(metadata.country.short_name, sfimage="map")
 
         xbar_sep()
-        xbar("Summary")
+        xbar("More Info", sfimage="info.circle")
         with xbar_submenu():
-            xbar(conn.summary, symbolize=False)
+            xbar("Summary", sfimage="text.magnifyingglass")
+            with xbar_submenu():
+                xbar(conn.summary, symbolize=False)
 
-        xbar("Metadata")
-        with xbar_submenu():
-            xbar(", ".join(conn.active_ids) if conn.active_ids else "No Active IDs", tabs=2, sfimage="externaldrive.badge.wifi")
-            xbar(", ".join(conn.known_active_ids) if conn.known_active_ids else "No Known Active IDs", tabs=1, sfimage="externaldrive.badge.checkmark")
+            xbar_sep()
+            xbar(", ".join(conn.active_ids) if conn.active_ids else "No Active IDs", tabs=2, sfimage="externaldrive.badge.wifi", symbolize=False)
+            xbar(", ".join(conn.known_active_ids) if conn.known_active_ids else "No Known Active IDs", tabs=1, sfimage="externaldrive.badge.checkmark", symbolize=False)
 
             xbar_sep()
             for key, value in metadata.model_dump().items():
@@ -559,7 +560,10 @@ async def main():
             app.xbar_device(connection.device, md=True, prefix=prefix, suffix=suffix, href=SERVER_URL)
 
         with xbar_submenu():
-            app.xbar_connection_details(connection)
+            xbar(connection.network.display_name, sfimage=connection.network.sf_symbol or "network")
+
+            with xbar_submenu():
+                app.xbar_connection_details(connection)
 
             try:
                 my_connections = await app.my_connections(session)
@@ -569,7 +573,7 @@ async def main():
             other_connections = [conn for conn in my_connections if conn != connection]
             if other_connections:
                 xbar_sep()
-                xbar("Other Device Connections")
+                xbar(f"Other Connections")
 
                 for conn in other_connections:
                     xbar(conn.network.display_name, sfimage=conn.network.sf_symbol or "network")
@@ -585,13 +589,14 @@ async def main():
 
                 if len(person_connections) > 1:
                     xbar_sep()
-                    xbar("All Connections")
+                    xbar("My Connections", sfimage="macbook.and.iphone")
 
-                    for conn in person_connections:
-                        app.xbar_connection(conn)
+                    with xbar_submenu():
+                        for conn in person_connections:
+                            app.xbar_connection(conn)
 
-                        with xbar_submenu():
-                            app.xbar_connection_details(conn)
+                            with xbar_submenu():
+                                app.xbar_connection_details(conn)
 
             xbar_sep()
             app.xbar_refresh()
@@ -639,13 +644,14 @@ async def main():
 
                             if len(person_connections) > 1:
                                 xbar_sep()
-                                xbar("All Connections")
+                                xbar("All Connections", sfimage="macbook.and.iphone")
 
-                                for conn in person_connections:
-                                    app.xbar_connection(conn)
+                                with xbar_submenu():
+                                    for conn in person_connections:
+                                        app.xbar_connection(conn)
 
-                                    with xbar_submenu():
-                                        app.xbar_connection_details(conn)
+                                        with xbar_submenu():
+                                            app.xbar_connection_details(conn)
 
 if __name__ == "__main__":
     asyncio.run(main())
