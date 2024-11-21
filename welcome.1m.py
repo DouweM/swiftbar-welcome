@@ -194,11 +194,14 @@ class Network(BaseModel):
     id: str
     display_name: str
 
-    attrs: dict[str, Any] = {}
+    class Attrs(BaseModel):
+        sf_symbol: str | None = None
+
+    attrs: Attrs = Attrs()
 
     @property
     def sf_symbol(self) -> str | None:
-        return self.attrs.get("sf_symbol")
+        return self.attrs.sf_symbol
 
 class DeviceType(str, Enum):
     phone = "phone"
@@ -280,17 +283,33 @@ class Role(BaseModel):
     id: str
     display_name: str
 
-    attrs: dict[str, Any] = {}
+    class Attrs(BaseModel):
+        sf_symbol: str | None = None
+
+    attrs: Attrs = Attrs()
 
     @property
     def sf_symbol(self) -> str | None:
-        return self.attrs.get("sf_symbol")
+        return self.attrs.sf_symbol
 
 class Home(BaseModel):
     id: str
     display_name: str
 
-    attrs: dict[str, Any] = {}
+    class Attrs(BaseModel):
+        class Address(BaseModel):
+            street: str | None = None
+            neighborhood: str | None = None
+            city: str | None = None
+
+        class Wifi(BaseModel):
+            ssid: str | None = None
+            password: str | None = None
+
+        address: Address | None = None
+        wifi: Wifi | None = None
+
+    attrs: Attrs = Attrs()
 
     def __hash__(self):
         return hash(self.id)
@@ -601,6 +620,33 @@ async def main():
             xbar_sep()
             app.xbar_refresh()
             app.xbar_open()
+
+        home = next((conn.home for conn in my_connections or [connection] if conn.home), None)
+        if home:
+            address = home.attrs.address
+            wifi = home.attrs.wifi
+            if address or wifi:
+                xbar(f"🏡 Explore **{home.display_name}**", md=True)
+
+                with xbar_submenu():
+                    if address:
+                        xbar("Address", sfimage="map")
+                        if address.street:
+                            xbar(address.street, copy=True)
+                        if address.neighborhood:
+                            xbar(address.neighborhood)
+                        if address.city:
+                            xbar(address.city)
+
+                    if wifi:
+                        xbar_sep()
+                        xbar("WiFi", sfimage="wifi")
+                        if wifi.ssid:
+                            xbar(wifi.ssid)
+                        if wifi.password:
+                            xbar(wifi.password, copy=True)
+            else:
+                xbar(f"🏡 You're at **{home.display_name}**", md=True)
 
         if people:
             home_room_people: dict[Home, dict[Room | None, list[ConnectedPerson]]] = defaultdict(lambda: defaultdict(list))
