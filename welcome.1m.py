@@ -454,14 +454,16 @@ class WelcomeApp:
 
         xbar(prefix + person.display_name + suffix, **params)
 
-    def xbar_connection(self, conn: Connection):
-        label = conn.device.display_name
-        if (icon := conn.network.sf_symbol):
-            label = f":{icon}: " + label
-        else:
-            label += f" @ {conn.network.display_name}"
+    def xbar_device(self, device: Device, prefix: str = "", suffix: str = "", **params: Any):
+        xbar(prefix + device.display_name + suffix, sfimage=device.sf_symbol or "externaldrive.badge.questionmark", **params)
 
-        xbar(label, sfimage=conn.device.sf_symbol or "network")
+    def xbar_connection(self, conn: Connection, prefix: str = "", suffix: str = "", **params: Any):
+        if (icon := conn.network.sf_symbol):
+            prefix = f":{icon}: " + prefix
+        else:
+            suffix += f" @ {conn.network.display_name}"
+
+        self.xbar_device(conn.device, prefix, suffix, **params)
 
     def xbar_connection_details(self, conn: Connection):
         xbar_sep()
@@ -524,37 +526,44 @@ async def main():
     async with app.get_session() as session:
         try:
             connection = await app.connection(session)
-            my_connections = await app.my_connections(session)
-            # TODO: If only people fails, still show current connection
-            people = await app.connected_people(session)
         except Exception as err:
             app.xbar_icon()
 
             app.xbar_error("Failed to load...", err)
+
             xbar_sep()
             app.xbar_refresh()
             app.xbar_open()
 
             return
 
+        try:
+            people = await app.connected_people(session)
+        except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
+            people = []
+
         app.xbar_icon(len(people))
 
+        prefix = "Welcome **"
+        suffix = "**"
+
+        if role_icon := connection.role.sf_symbol:
+            suffix += f" :{role_icon}:"
+        if network_icon := connection.network.sf_symbol:
+            suffix += f" :{network_icon}:"
+
         if connection.person:
-            prefix = "Welcome **"
-            suffix = "**"
-
-            if role_icon := connection.role.sf_symbol:
-                suffix += f" :{role_icon}:"
-            if network_icon := connection.network.sf_symbol:
-                suffix += f" :{network_icon}:"
-
             await app.xbar_person(session, connection.person, md=True, prefix=prefix, suffix=suffix, href=SERVER_URL)
         else:
-            # TODO: Show more nicely
-            xbar(connection.device.display_name)
+            app.xbar_device(connection.device, md=True, prefix=prefix, suffix=suffix, href=SERVER_URL)
 
         with xbar_submenu():
             app.xbar_connection_details(connection)
+
+            try:
+                my_connections = await app.my_connections(session)
+            except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
+                my_connections = []
 
             other_connections = [conn for conn in my_connections if conn != connection]
             if other_connections:
@@ -568,7 +577,11 @@ async def main():
                         app.xbar_connection_details(conn)
 
             if connection.person:
-                person_connections = await app.person_connections(session, connection.person)
+                try:
+                    person_connections = await app.person_connections(session, connection.person)
+                except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
+                    person_connections = []
+
                 if len(person_connections) > 1:
                     xbar_sep()
                     xbar("All Connections")
@@ -600,7 +613,6 @@ async def main():
                         xbar(room.display_name, size=14)
 
                     for connected_person in people:
-
                         await app.xbar_person(session, connected_person.person, avatar_size=26)
 
                         with xbar_submenu():
@@ -619,7 +631,11 @@ async def main():
                             #         with xbar_submenu():
                             #             app.xbar_connection_details(conn)
 
-                            person_connections = await app.person_connections(session, connected_person.person)
+                            try:
+                                person_connections = await app.person_connections(session, connected_person.person)
+                            except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
+                                person_connections = []
+
                             if len(person_connections) > 1:
                                 xbar_sep()
                                 xbar("All Connections")
@@ -629,8 +645,6 @@ async def main():
 
                                     with xbar_submenu():
                                         app.xbar_connection_details(conn)
-        else:
-            xbar("No one's home")
 
 if __name__ == "__main__":
     asyncio.run(main())
