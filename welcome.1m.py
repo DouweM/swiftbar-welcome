@@ -310,6 +310,7 @@ class Role(BaseModel):
 class Home(BaseModel):
     id: str
     display_name: str
+    connected: bool | None = None
 
     class Attrs(BaseModel):
         class Address(BaseModel):
@@ -324,11 +325,31 @@ class Home(BaseModel):
         address: Address | None = None
         wifi: Wifi | None = None
 
-        door_code_prefix: str | None = None
+        class DoorCode(BaseModel):
+            prefix: str | None = None
+            code: str | int | None = None
+
+        door_code: DoorCode | None = None
 
         avatar_url: str | None = None
 
     attrs: Attrs = Attrs()
+
+    def door_code(self, person: Person | None = None) -> str | None:
+        door_code = self.attrs.door_code
+        if not door_code:
+            return None
+
+        code = door_code.code or (person and person.attrs.door_code)
+
+        if not code:
+            return None
+
+        code = str(code)
+        if prefix := door_code.prefix:
+            code = prefix + code
+
+        return code
 
     @property
     def avatar_url(self) -> str | None:
@@ -336,6 +357,11 @@ class Home(BaseModel):
 
     def __hash__(self):
         return hash(self.id)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Home):
+            return self.id == other.id
+        return False
 
     async def avatar(self, session: aiohttp.ClientSession, size: int = 32) -> bytes | None:
         avatar_url = self.avatar_url
@@ -358,6 +384,11 @@ class Room(BaseModel):
 
     def __hash__(self):
         return hash(self.id)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Room):
+            return self.id == other.id
+        return False
 
 class Metadata(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -409,6 +440,7 @@ class ConnectedPerson(BaseModel):
 class WelcomeApp:
     def __init__(self):
         self._connection: Connection | None = None
+        self._homes: list[Home] | None = None
         self._my_connections: list[Connection] | None = None
         self._connected_people: list[ConnectedPerson] | None = None
         self._person_connections: dict[str, list[Connection]] = defaultdict(list)
@@ -445,24 +477,37 @@ class WelcomeApp:
 
         return self._session
 
+    async def request(self, url: str, raise_for_status: bool = False) -> list[dict[str, Any]] | dict[str, Any] | None:
+        try:
+            response = await self.session.get(url)
+            self._save_cookies()
+
+            return await response.json()
+        except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
+            if raise_for_status:
+                raise
+            return None
+
     @property
     async def connection(self) -> Connection:
         if self._connection is None:
-            response = await self.session.get(f"{SERVER_URL}/api/me")
-            self._save_cookies()
-
-            raw_connection = await response.json()
+            raw_connection = await self.request(f"{SERVER_URL}/api/me", raise_for_status=True)
             self._connection = Connection.model_validate(raw_connection)
 
         return self._connection
 
     @property
+    async def homes(self) -> list[Home]:
+        if self._homes is None:
+            raw_homes = await self.request(f"{SERVER_URL}/api/homes") or []
+            self._homes = [Home.model_validate(raw) for raw in raw_homes]
+
+        return self._homes
+
+    @property
     async def my_connections(self) -> list[Connection]:
         if self._my_connections is None:
-            response = await self.session.get(f"{SERVER_URL}/api/me/connections")
-            self._save_cookies()
-
-            raw_connections = await response.json()
+            raw_connections = await self.request(f"{SERVER_URL}/api/me/connections") or []
             self._my_connections = [Connection.model_validate(raw) for raw in raw_connections]
 
         return self._my_connections
@@ -470,10 +515,7 @@ class WelcomeApp:
     @property
     async def connected_people(self) -> list[ConnectedPerson]:
         if self._connected_people is None:
-            response = await self.session.get(f"{SERVER_URL}/api/homes/people")
-            self._save_cookies()
-
-            raw_people = await response.json()
+            raw_people = await self.request(f"{SERVER_URL}/api/homes/people") or []
             self._connected_people = [ConnectedPerson.model_validate(raw) for raw in raw_people]
 
         return self._connected_people
@@ -484,10 +526,7 @@ class WelcomeApp:
 
         id = device.ids[0]
         if id not in self._device_connections:
-            response = await self.session.get(f"{SERVER_URL}/api/devices/{id}/connections")
-            self._save_cookies()
-
-            raw_connections = await response.json()
+            raw_connections = await self.request(f"{SERVER_URL}/api/devices/{id}/connections") or []
             self._device_connections[id] = [Connection.model_validate(raw) for raw in raw_connections]
 
         return self._device_connections[id]
@@ -497,10 +536,7 @@ class WelcomeApp:
             return []
 
         if person.id not in self._person_connections:
-            response = await self.session.get(f"{SERVER_URL}/api/people/{person.id}/connections")
-            self._save_cookies()
-
-            raw_connections = await response.json()
+            raw_connections = await self.request(f"{SERVER_URL}/api/people/{person.id}/connections") or []
             self._person_connections[person.id] = [Connection.model_validate(raw) for raw in raw_connections]
 
         return self._person_connections[person.id]
@@ -509,13 +545,24 @@ class WelcomeApp:
     async def home_room_people(self) -> OrderedDict[Home, OrderedDict[Room | None, list[ConnectedPerson]]]:
         home_room_people: OrderedDict[Home, OrderedDict[Room | None, list[ConnectedPerson]]] = OrderedDict()
 
-        connection = await self.connection
-        my_connections = await self.my_connections
         people = await self.connected_people
-
         for person in people:
             if person.home:
                 home_room_people.setdefault(person.home, OrderedDict()).setdefault(person.room, []).append(person)
+
+        # Include all homes
+        homes = await self.homes
+        for home in homes:
+            if home in home_room_people:
+                continue
+
+            if home.connected is False:
+                continue
+
+            home_room_people.setdefault(home, OrderedDict())
+
+        connection = await self.connection
+        my_connections = await self.my_connections
 
         # Always include the current home and list it first
         home = next((conn.home for conn in [*my_connections, connection] if conn.home), None)
@@ -557,11 +604,7 @@ class WelcomeApp:
             await self.xbar_person_devices(person)
 
     async def xbar_person_devices(self, person: Person):
-        try:
-            person_connections = await self.person_connections(person)
-        except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
-            return
-
+        person_connections = await self.person_connections(person)
         if len(person_connections) <= 1:
             return
 
@@ -575,12 +618,8 @@ class WelcomeApp:
                     self.xbar_connection_details(conn)
 
     async def xbar_other_connections(self):
-        try:
-            connection = await self.connection
-            my_connections = await self.my_connections
-        except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
-            return
-
+        connection = await self.connection
+        my_connections = await self.my_connections
         other_connections = [conn for conn in my_connections if conn != connection]
         if not other_connections:
             return
@@ -621,16 +660,11 @@ class WelcomeApp:
             if address.city:
                 xbar(address.city)
 
-        person = (await self.connection).person
-        if person and (door_code := person.attrs.door_code):
-            door_code = str(door_code)
-            prefix = home.attrs.door_code_prefix
-            if prefix:
-                door_code = prefix + door_code
-
+        connection = await self.connection
+        if code := home.door_code(connection.person):
             xbar_sep()
             xbar("Door Code", sfimage="lock")
-            xbar(door_code, copy=True)
+            xbar(code, copy=True)
 
         wifi = home.attrs.wifi
         if wifi:
@@ -653,14 +687,9 @@ class WelcomeApp:
 
         xbar(prefix + person.display_name + suffix, **params)
 
-    async def xbar_person_details(self, person: Person, home: Home | None = None):
-        # TODO: Move to person.door_code_for_home?
-        door_code = person.attrs.door_code
-        if door_code:
-            if home and (prefix := home.attrs.door_code_prefix):
-                door_code = prefix + str(door_code)
-
-            xbar(door_code, sfimage="lock")
+    async def xbar_person_details(self, person: Person):
+        if code := person.attrs.door_code:
+            xbar(code, sfimage="lock", copy=True)
 
         phone = person.attrs.phone
         email = person.attrs.email
@@ -745,6 +774,10 @@ class WelcomeApp:
         if err:
             print(err)
 
+    def xbar_footer(self):
+        xbar_sep()
+        self.xbar_refresh()
+        self.xbar_open()
 
 async def main():
     app = WelcomeApp()
@@ -752,32 +785,21 @@ async def main():
     try:
         try:
             await app.connection
-        except Exception as err:
+        except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError) as err:
             app.xbar_icon()
-
-            app.xbar_error("Failed to load...", err)
-
-            xbar_sep()
-            app.xbar_refresh()
-            app.xbar_open()
+            app.xbar_error("Failed to connect to Welcome server", err)
+            app.xbar_footer()
 
             return
 
-        try:
-            people = await app.connected_people
-            app.xbar_icon(len(people))
-        # TODO: Centralize error handling?
-        except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
-            people = []
-            app.xbar_icon()
+        people = await app.connected_people
+        app.xbar_icon(len(people))
 
         await app.xbar_welcome()
         with xbar_submenu():
             await app.xbar_welcome_details()
 
-            xbar_sep()
-            app.xbar_refresh()
-            app.xbar_open()
+            app.xbar_footer()
 
         home_room_people = await app.home_room_people
         for home, room_people in home_room_people.items():
@@ -788,9 +810,9 @@ async def main():
                 await app.xbar_home_details(home)
 
             for room, people in room_people.items():
-                if room:
-                    xbar_sep()
+                xbar_sep()
 
+                if room:
                     xbar(room.display_name, size=14)
 
                 for connected_person in people:
@@ -801,7 +823,7 @@ async def main():
                     with xbar_submenu():
                         app.xbar_role(conn.role)
 
-                        await app.xbar_person_details(person, home)
+                        await app.xbar_person_details(person)
 
                         xbar_sep()
 
