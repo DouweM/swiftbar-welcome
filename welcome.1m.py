@@ -30,7 +30,7 @@ import aiohttp
 import asyncio
 import base64
 import os
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from yarl import URL
 from aiohttp.cookiejar import CookieJar
 import pickle
@@ -657,67 +657,67 @@ async def main():
             app.xbar_refresh()
             app.xbar_open()
 
-        home_room_people: dict[Home, dict[Room | None, list[ConnectedPerson]]] = defaultdict(lambda: defaultdict(list))
+        home_room_people: OrderedDict[Home, OrderedDict[Room | None, list[ConnectedPerson]]] = OrderedDict()
         for person in people:
             if person.home:
-                home_room_people[person.home][person.room].append(person)
+                home_room_people.setdefault(person.home, OrderedDict()).setdefault(person.room, []).append(person)
 
+        # Always include the current home and list it first
         home = next((conn.home for conn in [*my_connections, connection] if conn.home), None)
-        if home and home not in home_room_people:
-            home_room_people[home] = {}
+        if home:
+            home_room_people.setdefault(home, OrderedDict())
+            home_room_people.move_to_end(home, last=False)
 
         for home, room_people in home_room_people.items():
-            if len(home_room_people) > 1:
-                xbar_sep()
+            xbar_sep()
 
-                avatar = await home.avatar(session, size=20)
-                home_params: dict[str, Any] = {"size": 15}
-                if avatar:
-                    home_params["image"] = avatar
-                else:
-                    home_params["sfimage"] = "house"
+            avatar = await home.avatar(session, size=20)
+            home_params: dict[str, Any] = {"size": 15}
+            if avatar:
+                home_params["image"] = avatar
+            else:
+                home_params["sfimage"] = "house"
 
-                address = home.attrs.address
-                wifi = home.attrs.wifi
-                door_code = connection.person.attrs.door_code if connection.person else None
-                if address or wifi or door_code:
-                    xbar(home.display_name, **home_params)
+            address = home.attrs.address
+            wifi = home.attrs.wifi
+            door_code = connection.person.attrs.door_code if connection.person else None
+            if address or wifi or door_code:
+                xbar(home.display_name, **home_params)
 
-                    with xbar_submenu():
-                        if address:
-                            query = ", ".join([part for part in [address.street, address.neighborhood, address.city] if part])
-                            href = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote_plus(query)}"
-                            xbar("Google Maps", href=href, sfimage="map")
+                with xbar_submenu():
+                    if address:
+                        query = ", ".join([part for part in [address.street, address.neighborhood, address.city] if part])
+                        href = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote_plus(query)}"
+                        xbar("Google Maps", href=href, sfimage="map")
 
-                            xbar_sep()
-                            xbar("Address", sfimage="mappin.and.ellipse")
-                            if address.street:
-                                xbar(address.street, copy=True)
-                            if address.neighborhood:
-                                xbar(address.neighborhood)
-                            if address.city:
-                                xbar(address.city)
+                        xbar_sep()
+                        xbar("Address", sfimage="mappin.and.ellipse")
+                        if address.street:
+                            xbar(address.street, copy=True)
+                        if address.neighborhood:
+                            xbar(address.neighborhood)
+                        if address.city:
+                            xbar(address.city)
 
-                        if door_code:
-                            door_code = str(door_code)
-                            prefix = home.attrs.door_code_prefix
-                            if prefix:
-                                door_code = prefix + door_code
+                    if door_code:
+                        door_code = str(door_code)
+                        prefix = home.attrs.door_code_prefix
+                        if prefix:
+                            door_code = prefix + door_code
 
-                            xbar_sep()
-                            xbar("Door Code", sfimage="lock")
-                            xbar(door_code, copy=True)
+                        xbar_sep()
+                        xbar("Door Code", sfimage="lock")
+                        xbar(door_code, copy=True)
 
-                        if wifi:
-                            xbar_sep()
-                            xbar("Wi-Fi", sfimage="wifi")
-                            if wifi.ssid:
-                                xbar(wifi.ssid)
-                            if wifi.password:
-                                xbar(wifi.password, copy=True)
-                else:
-                    xbar(home.display_name, **home_params)
-
+                    if wifi:
+                        xbar_sep()
+                        xbar("Wi-Fi", sfimage="wifi")
+                        if wifi.ssid:
+                            xbar(wifi.ssid)
+                        if wifi.password:
+                            xbar(wifi.password, copy=True)
+            else:
+                xbar(home.display_name, **home_params)
 
             for room, people in room_people.items():
                 if room:
