@@ -414,6 +414,7 @@ class WelcomeApp:
         self._person_connections: dict[str, list[Connection]] = defaultdict(list)
         self._device_connections: dict[str, list[Connection]] = defaultdict(list)
 
+        self._session: aiohttp.ClientSession | None = None
         self._cookie_jar = CookieJar()
         self._load_cookies()
 
@@ -434,71 +435,214 @@ class WelcomeApp:
         except:
             pass
 
-    def get_session(self) -> aiohttp.ClientSession:
-        return aiohttp.ClientSession(
-            raise_for_status=True,
-            cookie_jar=self._cookie_jar
-        )
+    @property
+    def session(self) -> aiohttp.ClientSession:
+        if self._session is None:
+            self._session = aiohttp.ClientSession(
+                raise_for_status=True,
+                cookie_jar=self._cookie_jar
+            )
 
-    async def connection(self, session: aiohttp.ClientSession) -> Connection:
+        return self._session
+
+    @property
+    async def connection(self) -> Connection:
         if self._connection is None:
-            async with session.get(f"{SERVER_URL}/api/me") as response:
-                self._save_cookies()
+            response = await self.session.get(f"{SERVER_URL}/api/me")
+            self._save_cookies()
 
-                raw_connection = await response.json()
-                self._connection = Connection.model_validate(raw_connection)
+            raw_connection = await response.json()
+            self._connection = Connection.model_validate(raw_connection)
 
         return self._connection
 
-    async def my_connections(self, session: aiohttp.ClientSession) -> list[Connection]:
+    @property
+    async def my_connections(self) -> list[Connection]:
         if self._my_connections is None:
-            async with session.get(f"{SERVER_URL}/api/me/connections") as response:
-                self._save_cookies()
+            response = await self.session.get(f"{SERVER_URL}/api/me/connections")
+            self._save_cookies()
 
-                raw_connections = await response.json()
-                self._my_connections = [Connection.model_validate(raw) for raw in raw_connections]
+            raw_connections = await response.json()
+            self._my_connections = [Connection.model_validate(raw) for raw in raw_connections]
 
         return self._my_connections
 
-    async def connected_people(self, session: aiohttp.ClientSession) -> list[ConnectedPerson]:
+    @property
+    async def connected_people(self) -> list[ConnectedPerson]:
         if self._connected_people is None:
-            async with session.get(f"{SERVER_URL}/api/homes/people") as response:
-                self._save_cookies()
+            response = await self.session.get(f"{SERVER_URL}/api/homes/people")
+            self._save_cookies()
 
-                raw_people = await response.json()
-                self._connected_people = [ConnectedPerson.model_validate(raw) for raw in raw_people]
+            raw_people = await response.json()
+            self._connected_people = [ConnectedPerson.model_validate(raw) for raw in raw_people]
 
         return self._connected_people
 
-    async def device_connections(self, session: aiohttp.ClientSession, device: Device) -> list[Connection]:
+    async def device_connections(self, device: Device) -> list[Connection]:
         if not device.known:
             return []
 
         id = device.ids[0]
         if id not in self._device_connections:
-            async with session.get(f"{SERVER_URL}/api/devices/{id}/connections") as response:
-                self._save_cookies()
+            response = await self.session.get(f"{SERVER_URL}/api/devices/{id}/connections")
+            self._save_cookies()
 
-                raw_connections = await response.json()
-                self._device_connections[id] = [Connection.model_validate(raw) for raw in raw_connections]
+            raw_connections = await response.json()
+            self._device_connections[id] = [Connection.model_validate(raw) for raw in raw_connections]
 
         return self._device_connections[id]
 
-    async def person_connections(self, session: aiohttp.ClientSession, person: Person) -> list[Connection]:
+    async def person_connections(self, person: Person) -> list[Connection]:
         if not person.known:
             return []
 
         if person.id not in self._person_connections:
-            async with session.get(f"{SERVER_URL}/api/people/{person.id}/connections") as response:
-                self._save_cookies()
+            response = await self.session.get(f"{SERVER_URL}/api/people/{person.id}/connections")
+            self._save_cookies()
 
-                raw_connections = await response.json()
-                self._person_connections[person.id] = [Connection.model_validate(raw) for raw in raw_connections]
+            raw_connections = await response.json()
+            self._person_connections[person.id] = [Connection.model_validate(raw) for raw in raw_connections]
 
         return self._person_connections[person.id]
 
-    async def xbar_person(self, session: aiohttp.ClientSession, person: Person, avatar_size: int = 17, text_size: int | None = None, prefix: str = "", suffix: str = "", **params: Any):
-        avatar = await person.avatar(session, size=avatar_size)
+    @property
+    async def home_room_people(self) -> OrderedDict[Home, OrderedDict[Room | None, list[ConnectedPerson]]]:
+        home_room_people: OrderedDict[Home, OrderedDict[Room | None, list[ConnectedPerson]]] = OrderedDict()
+
+        connection = await self.connection
+        my_connections = await self.my_connections
+        people = await self.connected_people
+
+        for person in people:
+            if person.home:
+                home_room_people.setdefault(person.home, OrderedDict()).setdefault(person.room, []).append(person)
+
+        # Always include the current home and list it first
+        home = next((conn.home for conn in [*my_connections, connection] if conn.home), None)
+        if home:
+            home_room_people.setdefault(home, OrderedDict())
+            home_room_people.move_to_end(home, last=False)
+
+        return home_room_people
+
+    async def xbar_welcome(self):
+        connection = await self.connection
+
+        prefix = "Welcome **"
+        suffix = "**"
+
+        if role_icon := connection.role.sf_symbol:
+            suffix += f" :{role_icon}:"
+        if network_icon := connection.network.sf_symbol:
+            suffix += f" :{network_icon}:"
+
+        params: dict[str, Any] = {"md": True, "prefix": prefix, "suffix": suffix, "href": SERVER_URL}
+        if connection.person:
+            await self.xbar_person(connection.person, **params)
+        else:
+            self.xbar_device(connection.device, **params)
+
+    async def xbar_welcome_details(self):
+        connection = await self.connection
+
+        xbar(connection.network.display_name, sfimage=connection.network.sf_symbol or "network")
+
+        with xbar_submenu():
+            self.xbar_connection_details(connection)
+
+        await self.xbar_other_connections()
+
+        if person := connection.person:
+            xbar_sep()
+            await self.xbar_person_devices(person)
+
+    async def xbar_person_devices(self, person: Person):
+        try:
+            person_connections = await self.person_connections(person)
+        except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
+            return
+
+        if len(person_connections) <= 1:
+            return
+
+        xbar("Devices", sfimage="macbook.and.iphone")
+
+        with xbar_submenu():
+            for conn in person_connections:
+                self.xbar_connection(conn)
+
+                with xbar_submenu():
+                    self.xbar_connection_details(conn)
+
+    async def xbar_other_connections(self):
+        try:
+            connection = await self.connection
+            my_connections = await self.my_connections
+        except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
+            return
+
+        other_connections = [conn for conn in my_connections if conn != connection]
+        if not other_connections:
+            return
+
+        xbar_sep()
+        xbar(f"Other Connections")
+
+        for conn in other_connections:
+            self.xbar_network(conn.network)
+
+            with xbar_submenu():
+                self.xbar_connection_details(conn)
+
+    async def xbar_home(self, home: Home, **params: Any):
+        avatar = await home.avatar(self.session, size=20)
+        if avatar:
+            params["image"] = avatar
+        else:
+            params["sfimage"] = "house"
+
+        params["size"] = 15
+
+        xbar(home.display_name, **params)
+
+    async def xbar_home_details(self, home: Home):
+        address = home.attrs.address
+        if address:
+            query = ", ".join([part for part in [address.street, address.neighborhood, address.city] if part])
+            href = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote_plus(query)}"
+            xbar("Google Maps", href=href, sfimage="map")
+
+            xbar_sep()
+            xbar("Address", sfimage="mappin.and.ellipse")
+            if address.street:
+                xbar(address.street, copy=True)
+            if address.neighborhood:
+                xbar(address.neighborhood)
+            if address.city:
+                xbar(address.city)
+
+        person = (await self.connection).person
+        if person and (door_code := person.attrs.door_code):
+            door_code = str(door_code)
+            prefix = home.attrs.door_code_prefix
+            if prefix:
+                door_code = prefix + door_code
+
+            xbar_sep()
+            xbar("Door Code", sfimage="lock")
+            xbar(door_code, copy=True)
+
+        wifi = home.attrs.wifi
+        if wifi:
+            xbar_sep()
+            xbar("Wi-Fi", sfimage="wifi")
+            if wifi.ssid:
+                xbar(wifi.ssid)
+            if wifi.password:
+                xbar(wifi.password, copy=True)
+
+    async def xbar_person(self, person: Person, avatar_size: int = 20, text_size: int | None = None, prefix: str = "", suffix: str = "", **params: Any):
+        avatar = await person.avatar(self.session, size=avatar_size)
         if avatar:
             params["image"] = avatar
         else:
@@ -509,8 +653,34 @@ class WelcomeApp:
 
         xbar(prefix + person.display_name + suffix, **params)
 
+    async def xbar_person_details(self, person: Person, home: Home | None = None):
+        # TODO: Move to person.door_code_for_home?
+        door_code = person.attrs.door_code
+        if door_code:
+            if home and (prefix := home.attrs.door_code_prefix):
+                door_code = prefix + str(door_code)
+
+            xbar(door_code, sfimage="lock")
+
+        phone = person.attrs.phone
+        email = person.attrs.email
+        if phone or email:
+            xbar_sep()
+            if phone:
+                phone = phone.replace(" ", "").replace("(", "").replace(")", "").replace("-", "")
+                xbar("WhatsApp", href=f"https://wa.me/{phone}", sfimage="message")
+                xbar("Call", href=f"tel:{phone}", sfimage="phone")
+            if email:
+                xbar("Email", href=f"mailto:{email}", sfimage="envelope")
+
     def xbar_device(self, device: Device, prefix: str = "", suffix: str = "", **params: Any):
         xbar(prefix + device.display_name + suffix, sfimage=device.sf_symbol or "externaldrive.badge.questionmark", **params)
+
+    def xbar_role(self, role: Role, label: str | None = None):
+        xbar(label or role.display_name, sfimage=role.sf_symbol or "person.circle")
+
+    def xbar_network(self, network: Network, label: str | None = None):
+        xbar(label or network.display_name, sfimage=network.sf_symbol or "network")
 
     def xbar_connection(self, conn: Connection, prefix: str = "", suffix: str = "", **params: Any):
         if (icon := conn.network.sf_symbol):
@@ -579,9 +749,9 @@ class WelcomeApp:
 async def main():
     app = WelcomeApp()
 
-    async with app.get_session() as session:
+    try:
         try:
-            connection = await app.connection(session)
+            await app.connection
         except Exception as err:
             app.xbar_icon()
 
@@ -594,197 +764,55 @@ async def main():
             return
 
         try:
-            people = await app.connected_people(session)
+            people = await app.connected_people
             app.xbar_icon(len(people))
+        # TODO: Centralize error handling?
         except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
             people = []
             app.xbar_icon()
 
-
-        prefix = "Welcome **"
-        suffix = "**"
-
-        if role_icon := connection.role.sf_symbol:
-            suffix += f" :{role_icon}:"
-        if network_icon := connection.network.sf_symbol:
-            suffix += f" :{network_icon}:"
-
-        if connection.person:
-            await app.xbar_person(session, connection.person, md=True, prefix=prefix, suffix=suffix, href=SERVER_URL)
-        else:
-            app.xbar_device(connection.device, md=True, prefix=prefix, suffix=suffix, href=SERVER_URL)
-
+        await app.xbar_welcome()
         with xbar_submenu():
-            xbar(connection.network.display_name, sfimage=connection.network.sf_symbol or "network")
-
-            with xbar_submenu():
-                app.xbar_connection_details(connection)
-
-            try:
-                my_connections = await app.my_connections(session)
-            except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
-                my_connections = []
-
-            other_connections = [conn for conn in my_connections if conn != connection]
-            if other_connections:
-                xbar_sep()
-                xbar(f"Other Connections")
-
-                for conn in other_connections:
-                    xbar(conn.network.display_name, sfimage=conn.network.sf_symbol or "network")
-
-                    with xbar_submenu():
-                        app.xbar_connection_details(conn)
-
-            if connection.person:
-                try:
-                    person_connections = await app.person_connections(session, connection.person)
-                except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
-                    person_connections = []
-
-                if len(person_connections) > 1:
-                    xbar_sep()
-                    xbar("Devices", sfimage="macbook.and.iphone")
-
-                    with xbar_submenu():
-                        for conn in person_connections:
-                            app.xbar_connection(conn)
-
-                            with xbar_submenu():
-                                app.xbar_connection_details(conn)
+            await app.xbar_welcome_details()
 
             xbar_sep()
             app.xbar_refresh()
             app.xbar_open()
 
-        home_room_people: OrderedDict[Home, OrderedDict[Room | None, list[ConnectedPerson]]] = OrderedDict()
-        for person in people:
-            if person.home:
-                home_room_people.setdefault(person.home, OrderedDict()).setdefault(person.room, []).append(person)
-
-        # Always include the current home and list it first
-        home = next((conn.home for conn in [*my_connections, connection] if conn.home), None)
-        if home:
-            home_room_people.setdefault(home, OrderedDict())
-            home_room_people.move_to_end(home, last=False)
-
+        home_room_people = await app.home_room_people
         for home, room_people in home_room_people.items():
             xbar_sep()
 
-            avatar = await home.avatar(session, size=20)
-            home_params: dict[str, Any] = {"size": 15}
-            if avatar:
-                home_params["image"] = avatar
-            else:
-                home_params["sfimage"] = "house"
-
-            address = home.attrs.address
-            wifi = home.attrs.wifi
-            door_code = connection.person.attrs.door_code if connection.person else None
-            if address or wifi or door_code:
-                xbar(home.display_name, **home_params)
-
-                with xbar_submenu():
-                    if address:
-                        query = ", ".join([part for part in [address.street, address.neighborhood, address.city] if part])
-                        href = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote_plus(query)}"
-                        xbar("Google Maps", href=href, sfimage="map")
-
-                        xbar_sep()
-                        xbar("Address", sfimage="mappin.and.ellipse")
-                        if address.street:
-                            xbar(address.street, copy=True)
-                        if address.neighborhood:
-                            xbar(address.neighborhood)
-                        if address.city:
-                            xbar(address.city)
-
-                    if door_code:
-                        door_code = str(door_code)
-                        prefix = home.attrs.door_code_prefix
-                        if prefix:
-                            door_code = prefix + door_code
-
-                        xbar_sep()
-                        xbar("Door Code", sfimage="lock")
-                        xbar(door_code, copy=True)
-
-                    if wifi:
-                        xbar_sep()
-                        xbar("Wi-Fi", sfimage="wifi")
-                        if wifi.ssid:
-                            xbar(wifi.ssid)
-                        if wifi.password:
-                            xbar(wifi.password, copy=True)
-            else:
-                xbar(home.display_name, **home_params)
+            await app.xbar_home(home)
+            with xbar_submenu():
+                await app.xbar_home_details(home)
 
             for room, people in room_people.items():
                 if room:
                     xbar_sep()
+
                     xbar(room.display_name, size=14)
 
                 for connected_person in people:
                     person = connected_person.person
                     conn = connected_person.connection
 
-                    await app.xbar_person(session, person, avatar_size=26)
-
+                    await app.xbar_person(person, avatar_size=26)
                     with xbar_submenu():
-                        xbar(conn.role.display_name, sfimage=conn.role.sf_symbol or "person.circle")
+                        app.xbar_role(conn.role)
 
-                        door_code = person.attrs.door_code
-                        if door_code:
-                            prefix = home.attrs.door_code_prefix
-                            if prefix:
-                                door_code = prefix + str(door_code)
-
-                            xbar(door_code, sfimage="lock")
-
-                        phone = person.attrs.phone
-                        email = person.attrs.email
-                        if phone or email:
-                            xbar_sep()
-                            if phone:
-                                phone = phone.replace(" ", "").replace("(", "").replace(")", "").replace("-", "")
-                                xbar("WhatsApp", href=f"https://wa.me/{phone}", sfimage="message")
-                                xbar("Call", href=f"tel:{phone}", sfimage="phone")
-                            if email:
-                                xbar("Email", href=f"mailto:{email}", sfimage="envelope")
+                        await app.xbar_person_details(person, home)
 
                         xbar_sep()
-                        xbar("Connection", sfimage=conn.network.sf_symbol or "network")
 
+                        app.xbar_network(conn.network, label="Connection")
                         with xbar_submenu():
                             app.xbar_connection_details(conn)
 
-                        # TODO: Replace with other tracker connections?
-                        # device_connections = await app.device_connections(session, connected_person.connection.device)
-                        # other_connections = [conn for conn in device_connections if conn != connected_person.connection]
-                        # if other_connections:
-                        #     xbar_sep()
-                        #     xbar("Other Device Connections")
-
-                        #     for conn in other_connections:
-                        #         xbar(conn.network.display_name, sfimage=conn.network.sf_symbol or "network")
-
-                        #         with xbar_submenu():
-                        #             app.xbar_connection_details(conn)
-
-                        try:
-                            person_connections = await app.person_connections(session, person)
-                        except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
-                            person_connections = []
-
-                        if len(person_connections) > 1:
-                            xbar("Devices", sfimage="macbook.and.iphone")
-
-                            with xbar_submenu():
-                                for conn in person_connections:
-                                    app.xbar_connection(conn)
-
-                                    with xbar_submenu():
-                                        app.xbar_connection_details(conn)
+                        await app.xbar_person_devices(person)
+    finally:
+        # TODO: Make app context manager?
+        await app.session.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
