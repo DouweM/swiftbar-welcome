@@ -97,6 +97,7 @@ def xbar(text: Any | None = None, copy: bool | str = False, image: bytes | None 
 
     # Copy value to clipboard (only tested on macOS)
     if copy:
+        # TODO: Doesn't work properly with emojis and other non-ASCII characters
         copy_value = text if copy == True else copy
         params["bash"] = shutil.which("bash")
         params["param0"] = "-c"
@@ -313,14 +314,23 @@ class Home(BaseModel):
     connected: bool | None = None
 
     class Attrs(BaseModel):
-        class Address(BaseModel):
-            street: str | None = None
-            neighborhood: str | None = None
-            city: str | None = None
-
         class Wifi(BaseModel):
             ssid: str | None = None
             password: str | None = None
+
+        class Address(BaseModel):
+            street: str | None = None
+            neighborhood: str | None = None
+            postal_code: str | int | None = None
+            city: str | None = None
+            state: str | None = None
+            country: str | None = None
+
+            @property
+            def google_maps_url(self) -> str | None:
+                parts = [part for part in [self.street, self.neighborhood, str(self.postal_code), self.city, self.state, self.country] if part]
+                query = ", ".join(parts)
+                return f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote_plus(query)}"
 
         address: Address | None = None
         wifi: Wifi | None = None
@@ -380,7 +390,10 @@ class Room(BaseModel):
     id: str
     display_name: str
 
-    attrs: dict[str, Any] = {}
+    class Attrs(BaseModel):
+        sf_symbol: str | None = None
+
+    attrs: Attrs = Attrs()
 
     def __hash__(self):
         return hash(self.id)
@@ -592,10 +605,10 @@ class WelcomeApp:
     async def xbar_welcome_details(self):
         connection = await self.connection
 
-        xbar(connection.network.display_name, sfimage=connection.network.sf_symbol or "network")
+        self.xbar_network(connection.network)
 
         with xbar_submenu():
-            self.xbar_connection_details(connection)
+            await self.xbar_connection_details(connection)
 
         await self.xbar_other_connections()
 
@@ -615,7 +628,7 @@ class WelcomeApp:
                 self.xbar_connection(conn)
 
                 with xbar_submenu():
-                    self.xbar_connection_details(conn)
+                    await self.xbar_connection_details(conn)
 
     async def xbar_other_connections(self):
         connection = await self.connection
@@ -631,59 +644,62 @@ class WelcomeApp:
             self.xbar_network(conn.network)
 
             with xbar_submenu():
-                self.xbar_connection_details(conn)
+                await self.xbar_connection_details(conn)
 
-    async def xbar_home(self, home: Home, **params: Any):
-        avatar = await home.avatar(self.session, size=20)
-        if avatar:
-            params["image"] = avatar
+    async def xbar_home(self, home: Home, avatar: bool = True, **params: Any):
+        if avatar and (image := await home.avatar(self.session, size=20)):
+            params["image"] = image
         else:
             params["sfimage"] = "house"
-
-        params["size"] = 15
 
         xbar(home.display_name, **params)
 
     async def xbar_home_details(self, home: Home):
         address = home.attrs.address
         if address:
-            query = ", ".join([part for part in [address.street, address.neighborhood, address.city] if part])
-            href = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote_plus(query)}"
-            xbar("Google Maps", href=href, sfimage="map")
+            xbar("Google Maps", href=address.google_maps_url, sfimage="map")
 
-            xbar_sep()
             xbar("Address", sfimage="mappin.and.ellipse")
-            if address.street:
-                xbar(address.street, copy=True)
-            if address.neighborhood:
-                xbar(address.neighborhood)
-            if address.city:
-                xbar(address.city)
+            with xbar_submenu():
+                if address.street:
+                    xbar(address.street, copy=True, sfimage="house")
+                if address.neighborhood:
+                    xbar(address.neighborhood, copy=True, sfimage="house.circle")
+                if address.postal_code:
+                    xbar(str(address.postal_code), copy=True, sfimage="mail.and.text.magnifyingglass")
+                if address.city:
+                    xbar(address.city, copy=True, sfimage="building.2")
+                if address.state:
+                    xbar(address.state, copy=True, sfimage="building.columns")
+                if address.country:
+                    xbar(address.country, copy=True, sfimage="flag.circle")
 
         connection = await self.connection
         if code := home.door_code(connection.person):
             xbar_sep()
             xbar("Door Code", sfimage="lock")
-            xbar(code, copy=True)
+            with xbar_submenu():
+                xbar(code, copy=True)
 
         wifi = home.attrs.wifi
         if wifi:
             xbar_sep()
             xbar("Wi-Fi", sfimage="wifi")
-            if wifi.ssid:
-                xbar(wifi.ssid)
-            if wifi.password:
-                xbar(wifi.password, copy=True)
+            with xbar_submenu():
+                if wifi.ssid:
+                    xbar(wifi.ssid, sfimage="wifi.circle", copy=True)
+                if wifi.password:
+                    xbar(wifi.password, sfimage="key.horizontal", copy=True)
 
-    async def xbar_person(self, person: Person, avatar_size: int = 20, text_size: int | None = None, prefix: str = "", suffix: str = "", **params: Any):
+    def xbar_room(self, room: Room, **params: Any):
+        xbar(room.display_name, sfimage=room.attrs.sf_symbol or "door.left.hand.open", **params)
+
+    async def xbar_person(self, person: Person, avatar_size: int = 20, prefix: str = "", suffix: str = "", **params: Any):
         avatar = await person.avatar(self.session, size=avatar_size)
         if avatar:
             params["image"] = avatar
         else:
             params["sfimage"] = "person.fill" if person.known else "person.fill.questionmark"
-
-        if text_size:
-            params["size"] = text_size
 
         xbar(prefix + person.display_name + suffix, **params)
 
@@ -719,18 +735,18 @@ class WelcomeApp:
 
         self.xbar_device(conn.device, prefix, suffix, **params)
 
-    def xbar_connection_details(self, conn: Connection):
+    async def xbar_connection_details(self, conn: Connection):
         xbar_sep()
         xbar("Known" if conn.known else "Unknown", sfimage="person.fill.checkmark" if conn.known else "person.fill.questionmark")
-        xbar(conn.role.display_name, sfimage=conn.role.sf_symbol or "person.circle")
-        xbar(conn.network.display_name, sfimage=conn.network.sf_symbol or "network")
-        xbar(conn.device.display_name, sfimage=conn.device.sf_symbol or "externaldrive.badge.questionmark")
+        self.xbar_role(conn.role)
+        self.xbar_network(conn.network)
+        self.xbar_device(conn.device)
 
         if conn.home:
             xbar_sep()
-            xbar(conn.home.display_name, sfimage="house")
+            await self.xbar_home(conn.home, avatar=False)
             if conn.room:
-                xbar(conn.room.display_name, sfimage="door.left.hand.open")
+                self.xbar_room(conn.room)
 
         metadata = conn.metadata
 
@@ -738,26 +754,26 @@ class WelcomeApp:
         if metadata.ip:
             xbar(metadata.ip, sfimage="externaldrive.connected.to.line.below", copy=True)
         if metadata.mac:
-            xbar(metadata.mac, sfimage="externaldrive.badge.questionmark" if metadata.mac_is_private else "externaldrive", copy=True, symbolize=False)
+            xbar(metadata.mac, sfimage="externaldrive.badge.questionmark" if metadata.mac_is_private else "externaldrive", copy=True, symbolize=False, emojize=False)
         if metadata.wifi_ssid:
             xbar(metadata.wifi_ssid, sfimage="wifi.circle")
         if metadata.country:
-            xbar(metadata.country.short_name, sfimage="map")
+            xbar(metadata.country.short_name, sfimage="flag.circle")
 
         xbar_sep()
         xbar("More Info", sfimage="info.circle")
         with xbar_submenu():
             xbar("Summary", sfimage="text.magnifyingglass")
             with xbar_submenu():
-                xbar(conn.summary, symbolize=False)
+                xbar(conn.summary, symbolize=False, emojize=False)
 
             xbar_sep()
-            xbar(", ".join(conn.active_ids) if conn.active_ids else "No Active IDs", tabs=2, sfimage="externaldrive.badge.wifi", symbolize=False)
-            xbar(", ".join(conn.known_active_ids) if conn.known_active_ids else "No Known Active IDs", tabs=1, sfimage="externaldrive.badge.checkmark", symbolize=False)
+            xbar(", ".join(conn.active_ids) if conn.active_ids else "No Active IDs", tabs=2, sfimage="externaldrive.badge.wifi", symbolize=False, emojize=False)
+            xbar(", ".join(conn.known_active_ids) if conn.known_active_ids else "No Known Active IDs", tabs=1, sfimage="externaldrive.badge.checkmark", symbolize=False, emojize=False)
 
             xbar_sep()
             for key, value in metadata.model_dump().items():
-                xbar_kv(f"{key} = ", value, symbolize=False)
+                xbar_kv(f"{key} = ", value, symbolize=False, emojize=False)
 
     def xbar_icon(self, device_count: int | None = None):
         xbar(templateImage=MENUBAR_NUMBER_ICONS_B64.get(device_count or -1, MENUBAR_ICON_B64))
@@ -805,7 +821,7 @@ async def main():
         for home, room_people in home_room_people.items():
             xbar_sep()
 
-            await app.xbar_home(home)
+            await app.xbar_home(home, size=15)
             with xbar_submenu():
                 await app.xbar_home_details(home)
 
@@ -813,7 +829,7 @@ async def main():
                 xbar_sep()
 
                 if room:
-                    xbar(room.display_name, size=14)
+                    app.xbar_room(room)
 
                 for connected_person in people:
                     person = connected_person.person
@@ -829,7 +845,7 @@ async def main():
 
                         app.xbar_network(conn.network, label="Connection")
                         with xbar_submenu():
-                            app.xbar_connection_details(conn)
+                            await app.xbar_connection_details(conn)
 
                         await app.xbar_person_devices(person)
     finally:
