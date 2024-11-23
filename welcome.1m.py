@@ -36,6 +36,7 @@ from aiohttp.cookiejar import CookieJar
 import pickle
 from pydantic import BaseModel, ConfigDict
 from pydantic_extra_types.country import CountryAlpha2
+import urllib.parse
 
 
 MENUBAR_ICON_B64 = "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"
@@ -83,7 +84,7 @@ def xbar_sep():
 
     print("--" * xbar_nesting + "---", flush=True)
 
-def xbar(text: Any | None = None, copy: bool | str = False, **params: Any):
+def xbar(text: Any | None = None, copy: bool | str = False, image: bytes | None = None, **params: Any):
     global xbar_nesting
 
     segments: list[str] = []
@@ -101,6 +102,9 @@ def xbar(text: Any | None = None, copy: bool | str = False, **params: Any):
         params["param0"] = "-c"
         params["param1"] = f'"echo -n {str(copy_value)} | pbcopy"'
         params["terminal"] = False
+
+    if image:
+        params["image"] = base64.b64encode(image).decode()
 
     params_segments = [f"{key}={value}" for key, value in params.items() if value is not None]
     if params_segments:
@@ -271,6 +275,7 @@ class Person(BaseModel):
     class Attrs(BaseModel):
         phone: str | None = None
         email: str | None = None
+        door_code: str | int | None = None
 
     attrs: Attrs = Attrs()
 
@@ -288,14 +293,6 @@ class Person(BaseModel):
         data = await circle_image_data(data)
 
         return data
-
-    async def avatar_b64(self, session: aiohttp.ClientSession, size: int = 32) -> str | None:
-        # TODO: Cache between runs?
-        data = await self.avatar(session, size=size)
-        if not data:
-            return None
-
-        return base64.b64encode(data).decode()
 
 class Role(BaseModel):
     id: str
@@ -327,10 +324,31 @@ class Home(BaseModel):
         address: Address | None = None
         wifi: Wifi | None = None
 
+        door_code_prefix: str | None = None
+
+        avatar_url: str | None = None
+
     attrs: Attrs = Attrs()
+
+    @property
+    def avatar_url(self) -> str | None:
+        return self.attrs.avatar_url
 
     def __hash__(self):
         return hash(self.id)
+
+    async def avatar(self, session: aiohttp.ClientSession, size: int = 32) -> bytes | None:
+        avatar_url = self.avatar_url
+        if not avatar_url:
+            return None
+
+        data = await read_url(avatar_url, session)
+        if not data:
+            return None
+
+        data = await resize_image_data(data, size)
+
+        return data
 
 class Room(BaseModel):
     id: str
@@ -480,7 +498,7 @@ class WelcomeApp:
         return self._person_connections[person.id]
 
     async def xbar_person(self, session: aiohttp.ClientSession, person: Person, avatar_size: int = 17, text_size: int | None = None, prefix: str = "", suffix: str = "", **params: Any):
-        avatar = await person.avatar_b64(session, size=avatar_size)
+        avatar = await person.avatar(session, size=avatar_size)
         if avatar:
             params["image"] = avatar
         else:
@@ -639,102 +657,134 @@ async def main():
             app.xbar_refresh()
             app.xbar_open()
 
+        home_room_people: dict[Home, dict[Room | None, list[ConnectedPerson]]] = defaultdict(lambda: defaultdict(list))
+        for person in people:
+            if person.home:
+                home_room_people[person.home][person.room].append(person)
+
         home = next((conn.home for conn in [*my_connections, connection] if conn.home), None)
-        if home:
-            address = home.attrs.address
-            wifi = home.attrs.wifi
-            if address or wifi:
-                xbar(f"🏡 Explore **{home.display_name}**", md=True)
+        if home and home not in home_room_people:
+            home_room_people[home] = {}
 
-                with xbar_submenu():
-                    if address:
-                        xbar("Address", sfimage="map")
-                        if address.street:
-                            xbar(address.street, copy=True)
-                        if address.neighborhood:
-                            xbar(address.neighborhood)
-                        if address.city:
-                            xbar(address.city)
+        for home, room_people in home_room_people.items():
+            if len(home_room_people) > 1:
+                xbar_sep()
 
-                    if wifi:
-                        xbar_sep()
-                        xbar("WiFi", sfimage="wifi")
-                        if wifi.ssid:
-                            xbar(wifi.ssid)
-                        if wifi.password:
-                            xbar(wifi.password, copy=True)
-            else:
-                xbar(f"🏡 You're at **{home.display_name}**", md=True)
+                avatar = await home.avatar(session, size=20)
+                home_params: dict[str, Any] = {"size": 15}
+                if avatar:
+                    home_params["image"] = avatar
+                else:
+                    home_params["sfimage"] = "house"
 
-        if people:
-            home_room_people: dict[Home, dict[Room | None, list[ConnectedPerson]]] = defaultdict(lambda: defaultdict(list))
-            for person in people:
-                if person.home:
-                    home_room_people[person.home][person.room].append(person)
+                address = home.attrs.address
+                wifi = home.attrs.wifi
+                door_code = connection.person.attrs.door_code if connection.person else None
+                if address or wifi or door_code:
+                    xbar(home.display_name, **home_params)
 
-            for home, room_people in home_room_people.items():
-                if len(home_room_people) > 1:
-                    xbar_sep()
-                    xbar(home.display_name, sfimage="house", size=15)
-
-                for room, people in room_people.items():
-                    if room:
-                        xbar_sep()
-                        xbar(room.display_name, size=14)
-
-                    for connected_person in people:
-                        person = connected_person.person
-                        connection = connected_person.connection
-
-                        await app.xbar_person(session, person, avatar_size=26)
-
-                        with xbar_submenu():
-                            xbar(connection.role.display_name, sfimage=connection.role.sf_symbol or "person.circle")
-
-                            phone = person.attrs.phone
-                            email = person.attrs.email
-                            if phone or email:
-                                xbar_sep()
-                                if phone:
-                                    phone = phone.replace(" ", "").replace("(", "").replace(")", "").replace("-", "")
-                                    xbar("WhatsApp", href=f"https://wa.me/{phone}", sfimage="message")
-                                    xbar("Call", href=f"tel:{phone}", sfimage="phone")
-                                if email:
-                                    xbar("Email", href=f"mailto:{email}", sfimage="envelope")
+                    with xbar_submenu():
+                        if address:
+                            query = ", ".join([part for part in [address.street, address.neighborhood, address.city] if part])
+                            href = f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote_plus(query)}"
+                            xbar("Google Maps", href=href, sfimage="map")
 
                             xbar_sep()
-                            xbar("Connection", sfimage=connection.network.sf_symbol or "network")
+                            xbar("Address", sfimage="mappin.and.ellipse")
+                            if address.street:
+                                xbar(address.street, copy=True)
+                            if address.neighborhood:
+                                xbar(address.neighborhood)
+                            if address.city:
+                                xbar(address.city)
+
+                        if door_code:
+                            door_code = str(door_code)
+                            prefix = home.attrs.door_code_prefix
+                            if prefix:
+                                door_code = prefix + door_code
+
+                            xbar_sep()
+                            xbar("Door Code", sfimage="lock")
+                            xbar(door_code, copy=True)
+
+                        if wifi:
+                            xbar_sep()
+                            xbar("Wi-Fi", sfimage="wifi")
+                            if wifi.ssid:
+                                xbar(wifi.ssid)
+                            if wifi.password:
+                                xbar(wifi.password, copy=True)
+                else:
+                    xbar(home.display_name, **home_params)
+
+
+            for room, people in room_people.items():
+                if room:
+                    xbar_sep()
+                    xbar(room.display_name, size=14)
+
+                for connected_person in people:
+                    person = connected_person.person
+                    conn = connected_person.connection
+
+                    await app.xbar_person(session, person, avatar_size=26)
+
+                    with xbar_submenu():
+                        xbar(conn.role.display_name, sfimage=conn.role.sf_symbol or "person.circle")
+
+                        door_code = person.attrs.door_code
+                        if door_code:
+                            prefix = home.attrs.door_code_prefix
+                            if prefix:
+                                door_code = prefix + str(door_code)
+
+                            xbar(door_code, sfimage="lock")
+
+                        phone = person.attrs.phone
+                        email = person.attrs.email
+                        if phone or email:
+                            xbar_sep()
+                            if phone:
+                                phone = phone.replace(" ", "").replace("(", "").replace(")", "").replace("-", "")
+                                xbar("WhatsApp", href=f"https://wa.me/{phone}", sfimage="message")
+                                xbar("Call", href=f"tel:{phone}", sfimage="phone")
+                            if email:
+                                xbar("Email", href=f"mailto:{email}", sfimage="envelope")
+
+                        xbar_sep()
+                        xbar("Connection", sfimage=conn.network.sf_symbol or "network")
+
+                        with xbar_submenu():
+                            app.xbar_connection_details(conn)
+
+                        # TODO: Replace with other tracker connections?
+                        # device_connections = await app.device_connections(session, connected_person.connection.device)
+                        # other_connections = [conn for conn in device_connections if conn != connected_person.connection]
+                        # if other_connections:
+                        #     xbar_sep()
+                        #     xbar("Other Device Connections")
+
+                        #     for conn in other_connections:
+                        #         xbar(conn.network.display_name, sfimage=conn.network.sf_symbol or "network")
+
+                        #         with xbar_submenu():
+                        #             app.xbar_connection_details(conn)
+
+                        try:
+                            person_connections = await app.person_connections(session, person)
+                        except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
+                            person_connections = []
+
+                        if len(person_connections) > 1:
+                            xbar("Devices", sfimage="macbook.and.iphone")
 
                             with xbar_submenu():
-                                app.xbar_connection_details(connection)
+                                for conn in person_connections:
+                                    app.xbar_connection(conn)
 
-                            # TODO: Replace with other tracker connections?
-                            # device_connections = await app.device_connections(session, connected_person.connection.device)
-                            # other_connections = [conn for conn in device_connections if conn != connected_person.connection]
-                            # if other_connections:
-                            #     xbar_sep()
-                            #     xbar("Other Device Connections")
-
-                            #     for conn in other_connections:
-                            #         xbar(conn.network.display_name, sfimage=conn.network.sf_symbol or "network")
-
-                            #         with xbar_submenu():
-                            #             app.xbar_connection_details(conn)
-
-                            try:
-                                person_connections = await app.person_connections(session, connected_person.person)
-                            except (aiohttp.ClientConnectionError, aiohttp.ClientResponseError):
-                                person_connections = []
-
-                            if len(person_connections) > 1:
-                                xbar("Devices", sfimage="macbook.and.iphone")
-
-                                with xbar_submenu():
-                                    for conn in person_connections:
-                                        app.xbar_connection(conn)
-
-                                        with xbar_submenu():
-                                            app.xbar_connection_details(conn)
+                                    with xbar_submenu():
+                                        app.xbar_connection_details(conn)
 
 if __name__ == "__main__":
     asyncio.run(main())
