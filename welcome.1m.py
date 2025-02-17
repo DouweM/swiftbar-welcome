@@ -395,6 +395,10 @@ class Room(BaseModel):
 
     attrs: Attrs = Attrs()
 
+    @property
+    def sf_symbol(self) -> str | None:
+        return self.attrs.sf_symbol
+
     def __hash__(self):
         return hash(self.id)
 
@@ -692,7 +696,7 @@ class WelcomeApp:
                     xbar(wifi.password, sfimage="key.horizontal", copy=True)
 
     def xbar_room(self, room: Room, **params: Any):
-        xbar(room.display_name, sfimage=room.attrs.sf_symbol or "door.left.hand.open", **params)
+        xbar(room.display_name, sfimage=room.sf_symbol or "door.left.hand.open", **params)
 
     async def xbar_person(self, person: Person, avatar_size: int = 20, prefix: str = "", suffix: str = "", **params: Any):
         avatar = await person.avatar(self.session, size=avatar_size)
