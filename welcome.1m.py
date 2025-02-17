@@ -278,7 +278,13 @@ class Person(BaseModel):
         email: str | None = None
         door_code: str | int | None = None
 
+        sf_symbol: str | None = None
+
     attrs: Attrs = Attrs()
+
+    @property
+    def sf_symbol(self) -> str | None:
+        return self.attrs.sf_symbol
 
     async def avatar(self, session: aiohttp.ClientSession, size: int = 32) -> bytes | None:
         avatar_url = self.avatar_url
@@ -732,7 +738,7 @@ class WelcomeApp:
         if avatar:
             params["image"] = avatar
         else:
-            params["sfimage"] = "person.fill" if person.known else "person.fill.questionmark"
+            params["sfimage"] = person.sf_symbol or ("person.fill" if person.known else "person.fill.questionmark")
 
         xbar(prefix + person.display_name + suffix, **params)
 
