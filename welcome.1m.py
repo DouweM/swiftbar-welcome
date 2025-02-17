@@ -338,12 +338,17 @@ class Home(BaseModel):
 
             class Attrs(BaseModel):
                 sf_symbol: str | None = None
+                roles: list[str] | None = None
 
             attrs: Attrs = Attrs()
 
             @property
             def sf_symbol(self) -> str | None:
                 return self.attrs.sf_symbol
+
+            @property
+            def roles(self) -> list[str] | None:
+                return self.attrs.roles
 
         links: list[Link] = []
 
@@ -674,9 +679,12 @@ class WelcomeApp:
         xbar(home.display_name, **params)
 
     async def xbar_home_details(self, home: Home):
+        connection = await self.connection
+
         links = home.attrs.links
-        if links:
-            for link in links:
+        filtered_links = [link for link in links if not link.roles or connection.role.id in link.roles]
+        if filtered_links:
+            for link in filtered_links:
                 xbar(link.label, href=link.url, sfimage=link.sf_symbol)
             xbar_sep()
 
