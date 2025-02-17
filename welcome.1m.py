@@ -332,6 +332,21 @@ class Home(BaseModel):
                 query = ", ".join(parts)
                 return f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote_plus(query)}"
 
+        class Link(BaseModel):
+            label: str
+            url: str
+
+            class Attrs(BaseModel):
+                sf_symbol: str | None = None
+
+            attrs: Attrs = Attrs()
+
+            @property
+            def sf_symbol(self) -> str | None:
+                return self.attrs.sf_symbol
+
+        links: list[Link] = []
+
         address: Address | None = None
         wifi: Wifi | None = None
 
@@ -659,6 +674,12 @@ class WelcomeApp:
         xbar(home.display_name, **params)
 
     async def xbar_home_details(self, home: Home):
+        links = home.attrs.links
+        if links:
+            for link in links:
+                xbar(link.label, href=link.url, sfimage=link.sf_symbol)
+            xbar_sep()
+
         address = home.attrs.address
         if address:
             xbar("Google Maps", href=address.google_maps_url, sfimage="map")
